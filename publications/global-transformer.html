@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Transformer Architecture for Indoor Room Temperature Forecasting | Alfredo</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="icon" href="/assets/img/me.png">
+  <!-- Optionally include Inter font from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="site-header">
+  <div class="site-logo">
+    <a href="/" class="site-logo-link">
+    avc.
+    </a>
+  </div>
+  
+  <!-- Mobile menu button -->
+  <button class="mobile-menu-toggle" aria-label="Toggle navigation">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+  
+  <nav class="site-nav" aria-label="Main Navigation">
+    <a href="/" >Home</a>
+    <a href="/about.html" >About</a>
+    <a href="/publications.html" class="active">Publications</a>
+    <a href="/interactive-graph.html" >Interactive Graph</a>
+  </nav>
+</header>
+  <main>
+    <article class="publication-detail">
+  <div class="publication-detail-header">
+    <div class="publication-detail-container">
+      <div class="publication-breadcrumb">
+        <a href="/publications.html">← Back to Publications</a>
+      </div>
+      
+      <h1 class="publication-detail-title">Global Transformer Architecture for Indoor Room Temperature Forecasting</h1>
+      
+      <div class="publication-meta">
+        <div class="publication-authors">
+          
+            <span class="author">Alfredo V Clemente</span>, 
+          
+            <span class="author">Alessandro Nocente</span>, 
+          
+            <span class="author">Massimiliano Ruocco</span>
+          
+        </div>
+        <div class="publication-venue">JOP:CS • 2023</div>
+        <div class="publication-type">Conference</div>
+      </div>
+      
+      <div class="publication-actions">
+        
+          <a href="https://iopscience.iop.org/article/10.1088/1742-6596/2600/2/022018/pdf" class="publication-btn" target="_blank">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14,2 14,8 20,8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10,9 9,9 8,9"></polyline>
+            </svg>
+            Download PDF
+          </a>
+        
+        
+          <a href="https://iopscience.iop.org/article/10.1088/1742-6596/2600/2/022018/meta" class="publication-btn publication-btn-primary" target="_blank">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15,3 21,3 21,9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+            View in Journal
+          </a>
+        
+      </div>
+    </div>
+  </div>
+  
+  <div class="publication-detail-content">
+    <div class="publication-detail-container">
+      <div class="publication-citation-box">
+        <h3>Citation</h3>
+        <div class="citation-text">Clemente, A. V., Nocente, A., & Ruocco, M. (2023). Global Transformer Architecture for Indoor Room Temperature Forecasting. Journal of Physics: Conference Series, 2600(2), 022018. https://doi.org/10.1088/1742-6596/2600/2/022018</div>
+        <button class="copy-citation-btn" onclick="copyCitation()">Copy Citation</button>
+      </div>
+      
+      
+      <div class="publication-abstract-section">
+        <h3>Abstract</h3>
+        <p>A thorough regulation of building energy systems translates in relevant energy savings and in a better comfort for the occupants. Algorithms to predict the thermal state of a building on a certain time horizon with a good confidence are essential for the implementation of effective control systems. This work presents a global Transformer architecture for indoor temperature forecasting in multi-room buildings, aiming at optimizing energy consumption and reducing greenhouse gas emissions associated with HVAC systems. Recent advancements in deep learning have enabled the development of more sophisticated forecasting models compared to traditional feedback control systems. The proposed global Transformer architecture can be trained on the entire dataset encompassing all rooms, eliminating the need for multiple room-specific models, significantly improving predictive performance, and simplifying deployment and maintenance. Notably, this study is the first to apply a Transformer architecture for indoor temperature forecasting in multi-room buildings. The proposed approach provides a novel solution to enhance the accuracy and efficiency of temperature forecasting, serving as a valuable tool to optimize energy consumption and decrease greenhouse gas emissions in the building sector.</p>
+      </div>
+      
+      
+      
+
+    </div>
+  </div>
+</article>
+
+<script>
+function copyCitation() {
+  const citation = document.querySelector('.citation-text').textContent;
+  navigator.clipboard.writeText(citation).then(() => {
+    const btn = document.querySelector('.copy-citation-btn');
+    const originalText = btn.textContent;
+    btn.textContent = 'Copied!';
+    btn.style.background = 'var(--color-success)';
+    btn.style.color = 'white';
+    
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.style.background = '';
+      btn.style.color = '';
+    }, 2000);
+  });
+}
+</script>
+  </main>
+  <footer class="site-footer text-center mt-lg mb-lg">
+  <div class="footer-content">
+    &copy; 2025 Alfredo V. Clemente
+    <a href="https://github.com/alfredvc" target="_blank" rel="noopener" aria-label="GitHub">
+      <img src="/assets/img/github.svg" alt="GitHub" style="height:24px;width:24px;vertical-align:middle;">
+    </a>
+    <a href="https://linkedin.com/in/alfredvc" target="_blank" rel="noopener" aria-label="LinkedIn">
+      <img src="/assets/img/linkedin.svg" alt="LinkedIn" style="height:24px;width:24px;vertical-align:middle;">
+    </a>
+  </div>
+</footer>
+  
+  <!-- Include main JavaScript for site functionality -->
+  <script src="/assets/js/main.js"></script>
+</body>
+</html>
