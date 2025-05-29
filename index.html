@@ -1,1 +1,72 @@
-"Hello world" 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home | Alfredo</title>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="icon" href="/assets/img/me.png">
+  <!-- Optionally include Inter font from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="site-header">
+  <div class="site-logo">
+    <a href="/" class="site-logo-link">
+    avc.
+    </a>
+  </div>
+  
+  <!-- Mobile menu button -->
+  <button class="mobile-menu-toggle" aria-label="Toggle navigation">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+  
+  <nav class="site-nav" aria-label="Main Navigation">
+    <a href="/" class="active">Home</a>
+    <a href="/about/" >About</a>
+    <a href="/publications/" >Publications</a>
+    <a href="/interactive-graph/" >Interactive Graph</a>
+  </nav>
+</header>
+  <main>
+    <div class="container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;">
+  <img src="/assets/img/me.png" alt="Avatar" style="width: 150px; height: 150px; border-radius: var(--radius-avatar); object-fit: cover; box-shadow: var(--shadow-main);">
+  <h1 class="mt-md">Hi, I’m Alfredo</h1>
+  <p class="mt-sm" style="max-width: 640px; margin-left: auto; margin-right: auto;">I'm a software developer and AI researcher passionate about building innovative solutions. I love tackling complex problems and bringing ideas to life, from advanced AI concepts to impactful products.</p>
+  <a href="/interactive-graph/" class="hero-btn" style="color: #000; background: none; box-shadow: none; font-weight: 600; font-size: var(--font-size-btn); display: inline-flex; align-items: center; gap: 8px; transition: opacity 0.18s, color 0.18s;">
+    Explore My Work <span style="display: inline-block;">&rarr;</span>
+  </a>
+</div>
+<style>
+  
+.hero-btn span {
+  transition: transform 0.18s;
+}
+.hero-btn:hover span {
+  transform: translateX(4px);
+}
+.hero-btn:hover {
+  opacity: 0.8;
+}
+</style>
+<body class="fullscreen-page">
+  </main>
+  <footer class="site-footer text-center mt-lg mb-lg">
+  <div class="footer-content">
+    &copy; 2025 Alfredo V. Clemente
+    <a href="https://github.com/alfredvc" target="_blank" rel="noopener" aria-label="GitHub">
+      <img src="/assets/img/github.svg" alt="GitHub" style="height:24px;width:24px;vertical-align:middle;">
+    </a>
+    <a href="https://linkedin.com/in/alfredvc" target="_blank" rel="noopener" aria-label="LinkedIn">
+      <img src="/assets/img/linkedin.svg" alt="LinkedIn" style="height:24px;width:24px;vertical-align:middle;">
+    </a>
+  </div>
+</footer>
+  
+  <!-- Include main JavaScript for site functionality -->
+  <script src="/assets/js/main.js"></script>
+</body>
+</html>

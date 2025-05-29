@@ -1,0 +1,329 @@
+.graph-page {
+  background: var(--color-bg);
+  height: 100%;
+}
+
+.graph-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 6px;
+  padding: 3px 4px;
+  margin-bottom: 2px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.checkbox-item:hover,
+.checkbox-item:focus-within {
+  background: rgba(37,99,235,0.06);
+  color: #2563eb;
+}
+
+.checkbox-item input[type="checkbox"],
+.checkbox-item input[type="radio"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #cbd5e1;
+  border-radius: 50%;
+  background: #fff;
+  margin: 0 2px 0 0;
+  display: grid;
+  place-content: center;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.checkbox-item input[type="checkbox"] {
+  border-radius: 4px; /* Sharper corners for checkboxes */
+}
+
+.checkbox-item input[type="checkbox"]:checked,
+.checkbox-item input[type="radio"]:checked {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.checkbox-item input[type="checkbox"]:checked::after,
+.checkbox-item input[type="radio"]:checked::after {
+  content: '';
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 4px;
+  background: #2563eb;
+  margin: auto;
+}
+
+.checkbox-item input[type="checkbox"]:focus,
+.checkbox-item input[type="radio"]:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.12);
+}
+
+.checkbox-label {
+  font-size: 16px;
+  color: #333;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: color 0.15s;
+}
+
+/* Floating graph controls in Google Maps style */
+.graph-controls-floating {
+  position: absolute;
+  top: calc(var(--header-height, 60px) + 24px);
+  left: 24px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 8px; /* Sharper corners */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  padding: 12px 14px;
+  min-width: 180px;
+  max-width: 260px;
+  border: 1px solid #ececec;
+  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+}
+
+.graph-controls-floating .graph-search-input,
+.graph-controls-floating .graph-filter-select {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.graph-controls-floating .graph-search-container,
+.graph-controls-floating .graph-filter-container {
+  margin-bottom: 8px;
+}
+
+.graph-filter-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 0;
+}
+
+.type-checkboxes {
+  overflow: hidden;
+  transition: max-height 0.22s cubic-bezier(.4,0,.2,1);
+  max-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 0;
+  padding-left: 4px;
+}
+
+@media (max-width: 700px) {
+  .graph-controls-floating {
+    top: calc(var(--header-height, 60px) + 8px);
+    left: 8px;
+    padding: 8px 4px;
+    border-radius: 8px;
+  }
+  .type-checkboxes {
+    gap: 4px;
+    padding-left: 1px;
+  }
+  .checkbox-item {
+    font-size: 15px;
+    padding: 2px 8px;
+  }
+  .checkbox-label {
+    font-size: 15px;
+  }
+}
+
+/* Mobile responsive */
+@media (max-width: 900px) {
+  .graph-container {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  
+  .graph-control-panel {
+    max-height: 200px;
+    border-left: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  
+  .control-section {
+    margin-bottom: var(--space-md);
+  }
+  
+  .checkbox-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+/* D3 specific styles */
+.node {
+  cursor: pointer;
+}
+
+.node circle {
+  transition: r 0.15s ease, opacity 0.2s ease;
+}
+
+.node text {
+  pointer-events: none;
+  user-select: none;
+}
+
+.links line {
+  transition: opacity 0.15s ease;
+}
+
+.chevron {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 13px;
+  transition: transform 0.22s cubic-bezier(.4,0,.2,1);
+  transform: rotate(0deg) scaleX(0.7) scaleY(1.2);
+}
+.chevron.open {
+  transform: rotate(90deg) scaleX(0.7) scaleY(1.2);
+  color: #2563eb;
+}
+
+/* Graph Legend - positioned bottom right */
+.graph-legend-floating {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  z-index: 20;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  padding: 12px 14px;
+  border: 1px solid #ececec;
+  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+  min-width: 140px;
+}
+
+.legend-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  flex-shrink: 0;
+}
+
+.legend-color[data-type="job"] {
+  background-color: #ef4444;
+}
+
+.legend-color[data-type="project"] {
+  background-color: #f59e0b;
+}
+
+.legend-color[data-type="technology"] {
+  background-color: #06b6d4;
+}
+
+.legend-color[data-type="language"] {
+  background-color: #8b5cf6;
+}
+
+.legend-color[data-type="article"] {
+  background-color: #059669;
+}
+
+.legend-label {
+  font-size: 13px;
+  color: #333;
+  font-weight: 500;
+}
+
+/* Mobile responsive adjustments for legend */
+@media (max-width: 700px) {
+  .graph-legend-floating {
+    bottom: 8px;
+    right: 8px;
+    padding: 8px 10px;
+    min-width: 120px;
+  }
+  
+  .legend-title {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  
+  .legend-items {
+    gap: 4px;
+  }
+  
+  .legend-color {
+    width: 12px;
+    height: 12px;
+  }
+  
+  .legend-label {
+    font-size: 12px;
+  }
+}
+
+/* Very small screens - stack legend horizontally at bottom */
+@media (max-width: 480px) {
+  .graph-legend-floating {
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    padding: 8px 12px;
+    min-width: auto;
+  }
+  
+  .legend-items {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 12px;
+  }
+  
+  .legend-item {
+    gap: 6px;
+  }
+}
