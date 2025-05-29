@@ -145,6 +145,10 @@ img {
 .mb-md { margin-bottom: var(--space-md); }
 .mb-sm { margin-bottom: var(--space-sm); }
 
+.site-footer {
+  margin-block: var(--space-lg);
+}
+
 /* Button styles */
 .btn {
   display: inline-flex;
@@ -283,7 +287,11 @@ img {
   .site-header {
     padding: 0 var(--space-md);
   }
-  
+
+  .site-footer {
+    margin-block: var(--space-sm);
+  }
+
   .mobile-menu-toggle {
     display: flex;
   }
@@ -475,17 +483,6 @@ img {
   color: var(--color-text-main);
   line-height: 1.5;
   margin-top: var(--space-xs);
-}
-
-/* About Footer CTA */
-.about-footer-cta {
-  width: 100%;
-  height: 60px;
-  background: var(--color-accent-tint);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: var(--space-xl);
 }
 
 .about-cta-link {
@@ -1233,6 +1230,10 @@ img {
     padding-left: var(--space-md);
     padding-right: var(--space-md);
   }
+
+  .publications-container{
+    margin: 0;
+  }
   
   .publication-detail-title {
     font-size: 28px;
@@ -1245,7 +1246,10 @@ img {
 
 @media (max-width: 600px) {
   .about-banner {
-    height: 60px;
+    height: 30px;
+  }
+  .about-portrait {
+    max-width: 200px;
   }
   .publications-container,
   .publication-detail-container {
