@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Part 1: Chess as autocomplete | Alfredo</title>
+  
+  <meta property="og:image" content="https://alfredvc.no/assets/img/coming-soon.png"/>
+  
+  <meta property="og:description" content="In this post we will explore training a transformer model from scratch to play chess following the same procedures used to train modern LLMs."/>
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link rel="icon" href="/assets/img/me.png">
+  <!-- <link rel="preload" as="font" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;500;600;700;800&display=swap">
+  <link rel="preload" as="font" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"> -->
+</head>
+<body>
+  <header class="site-header">
+  <div class="site-logo">
+    <a href="/" class="site-logo-link">
+    avc.
+    </a>
+  </div>
+  
+  <!-- Mobile menu button -->
+  <button class="mobile-menu-toggle" aria-label="Toggle navigation">
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+    <span class="hamburger-line"></span>
+  </button>
+  
+  <nav class="site-nav" aria-label="Main Navigation">
+    <a href="/" >Home</a>
+    <a href="/about.html" >About</a>
+    <a href="/blog.html" class="active">Blog</a>
+    <a href="/publications.html" >Publications</a>
+    <a href="/interactive-graph.html" >Interactive Graph</a>
+  </nav>
+</header>
+  <main>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboard2@0.5.0/dist/chessboard2.min.css"
+    integrity="sha384-47VeTDpmy4yT21gKPXQcLQYQZwlmz27gEH5NTrOmTk3G/SGvMyltclOW/Q8uE+sL" crossorigin="anonymous">
+
+<!-- add JS via CDN: -->
+<script src="https://unpkg.com/@chrisoakman/chessboard2@0.5.0/dist/chessboard2.min.js"
+    integrity="sha384-/KwQCjA1GWovZNV3QDVtvSMDzO4reGgarF/RqHipr7hIUElH3r5zNl9WEPPOBRIF"
+    crossorigin="anonymous"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.1/chess.js"
+    integrity="sha384-8sJV/krC8iV2g7t0PolQxFVckDtxhfM5gNHNAFPG2ZS/bScudOjfsB8ewhG2xle8"
+    crossorigin="anonymous"></script>
+
+<!-- ONNX Runtime for WebGPU -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.min.js"></script>
+<script src="/assets/js/chess-lib.min.js"></script> 
+
+    <script>
+        window.onload = async () => {
+            const game = new ChessGame({
+                models: [
+                    { path: '/assets/model-quant.onnx', label: 'BobbyQuant', size: '87MB' },
+                ],
+                containerId: 'chess-container'
+            });
+            await game.init();
+        };
+    </script>
+<article>
+    <div class="article-header">
+        <div class="article-title">
+            <h1>Part 1: Chess as autocomplete</h1>
+            <h3 class="article-subtitle">Can autocomplete play chess? A journey into applied AI research</h3>
+        </div>
+        <p class="article-meta">In this post we will explore training a transformer model from scratch to play chess following the same procedures used to train modern LLMs.</p>
+    </div>
+    
+    <div class="article-divider"></div>
+    <div id="chess-container"></div>
+
+    <!-- <h2>Part 1: An introduction to LLMs</h2>
+    <p><em>Here we will ignore some details, and provide simplified explanations where appropriate. Our focus is to build a useful mental model of what LLMs are, how they work, and how they are trained.</em></p>
+
+    <p>I would describe an LLM as:</p>
+    <p class="emphasized-quote">the worlds most powerful autocomplete</p>
+
+    <p>Conceptually, an LLM can be though of as a black box, that takes as its input some text, and produces the continuation of that text.</p>
+
+    <img class="media" src="/assets/img/llm.png" alt="LLM black box representation."/>
+
+    <h3>The language of LLMs</h3>
+    <p>LLMs work with <strong><em>tokens</em></strong>, they do not have the concepts of "words", "characters" or "sentences". A token can be one or more characters<span class="tooltip"><span class="footnote-ref">[1]</span><span class="tooltiptext">Some special tokens do not represent any characters at all, we will discuss those later.</span></span>: <code>Hello</code> is a token, but for example the word "Prehistoric" is split into the tokens <code>Pre</code> and <code>historic</code><span class="tooltip"><span class="footnote-ref">[2]</span><span class="tooltiptext">All examples use Llama 3's tokenizer. Other tokenizers will give different results.</span></span>.
+    Shakespare's famous quote <code>To be, or not to be, that is the question</code> is divided into the tokens <code>['To', ' be', ',', ' or', ' not', ' to', ' be', ' that', ' is', ' the', ' question']</code>. Each token has its own unique number (its id), for example, the above tokens translate to <code>[1271, 387, 11, 477, 539, 311, 387, 11, 430, 374, 279, 3488]</code>. The tokenizer is the piece of code responsible for converting text into tokens (encoding), as well as converting tokens back into text (decoding). If you want to see tokenization in action and play with it you can go to the great site <a href="https://tiktokenizer.vercel.app/" target="_blank">Tiktokenizer</a>.</p>
+
+    <p>Different tokenizers may assign different ids to the same tokens, so an LLM will usually only work with the tokenizer it was trained with, and return garbage if it receives token ids from another tokenizers.</p>
+
+    <img class="media" src="/assets/img/tokenizer.png" alt="Tokenizer converting text to token ids."/>
+
+    <p>Tokenizers have a limited size, LLama 3's tokenizer has 128256 unique tokens. Once an LLM is trained with a tokenizer, this list of tokens is referred to as the <strong><em>vocabulary</em></strong> of the LLM. An LLM can never accept tokens that are not in their vocabulary, and it is impossible for them to output anything that is not in their vocabulary.</p>
+
+    <p>Tokens ids are the fundamental language that LLMs speak, they expect token ids as inputs, and they produce token ids as outputs.</p>
+
+    <h3>Generating text</h3>
+    <p>The process for generating text with an LLM is conceptually simple. First the text to be completed must be tokenized. Our text
+    <code>To be, or not to be, </code> is encoded into its corresponding token ids: <code>[1271, 387, 11, 477, 539, 311, 387, 11]</code>. The token ids are then given to the LLM as input, it processes them, and the chooses the next token. In this case <code>430</code>. This token id is then added to the original list of token ids and the process is repeated.</p>
+
+    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+        <source src="/assets/videos/LLMInferenceFlow.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <h3>How a token is actually chosen</h3>
+    <p>LLMs do not directly output token ids, they output the <strong>probability of each token id in the vocabulary being the next token</strong>. The output of an LLM defines a probability distribution over the token ids given the input tokens. LLama 3, for example, returns 128256 probabilities.</p>
+
+    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+        <source src="/assets/videos/TokenDistribution.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <p>The process of choosing a specific token id from the probability distribution over all possible next token ids is called sampling.
+    The simplest way to sample is to simply pick the token id that has the highest probability.
+    The choice of sampling procedure can have large effects on the output of an LLM, and is something that must be carefully tuned when using LLMs to solve specific tasks.</p>
+
+    <figure>
+        <img class="media-with-caption" src="/assets/img/sampling.png" alt="Next token sampling options."/>
+        <caption>
+            <p class="media-caption">Options usually exposed by LLM providers to adjust the sampling procedure</p>
+        </caption>
+    </figure>
+
+    <p>One crucial point I want to leave you with is that regardless of their amazing capabilities and near magical appeal: </p>
+    <p class="emphasized-quote">The only thing LLMs do is predict the next token</p>
+    <p>Everything else is accomplished by cleverly framing problems as token prediction.</p>
+
+    <h2>From monkeys to autocomplete, how LLMs are pre-trained</h2>
+    <p>When an LLM is first created, it's like a monkey with a typewriter; regardless of what text you give it, it will return a random token id.</p>
+
+    <p>The goal of pre-training is to imbue an LLM with "general knowledge": how language looks like, how code looks like, facts, how mathematical calculations are performed, etc. This is achieved by <strong>training the LLM to complete text</strong>, ideally all text.</p>
+
+    <p>First, we must find a dataset that is representative of the kinds of text we wish the model to complete. Companies like OpenAI, Google and Meta have their own proprietary datasets, which are a mix of text from the internet, books, scientific articles, code, etc. These training datasets are in the order of trillions of tokens, which is the in the same order of magnitude as the text contained in all books ever published.</p>
+
+    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+        <source src="/assets/videos/LLMPreTrainingProcess.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <p>The process for pre-training the LLM is as follows:</p>
+    <ol>
+        <li>Sample an example at random from the dataset</li>
+        <li>Pass the first N tokens of the example through the LLM</li>
+        <li>Increase the probability of the Nth+1 token</li>
+        <li>Repeat</li>
+    </ol>
+
+    <p>This process takes an enormous amount of compute, in the form of thousands of GPU servers, working for months.</p>
+
+    <h2>Assistants, completing a different kind of text</h2>
+    <p>Once an LLM has been pretrained it is only capable of completing text. What would happen if you were to ask it to "Write a poem"? LLMs are pretrained on a vast amount of text data, you can imagine that the model has seen highschool english homeworks and reddit threads where the text "Write a poem" is followed by " about your first love", or " for a friend". So a pretrained LLM will respond with something along those lines.</p>
+
+    <p>If you want the LLM to actually write you a poem, further training is required. This is achieved through <strong>instruction fine-tuning</strong>.</p>
+
+    <p>Instruction fine-tuning frames the problem of instruction following into something that LLMs do understand, <em>text completion</em>.</p>
+
+    <p>The first step is to create a dataset of the kinds of instruction-response pairs you wish the LLM to be able to follow. For example:</p>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Instruction</th>
+                    <th>Response</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>What is the capital of France?</td>
+                    <td>The capital of France is Paris.</td>
+                </tr>
+                <tr>
+                    <td>What are the three primary colors?</td>
+                    <td>The three primary colors are red, blue, and yellow.</td>
+                </tr>
+                <tr>
+                    <td>Write a short story in third person narration about a protagonist who has to make an important career decision.</td>
+                    <td>John was at a crossroads in his life. He had just graduated college and was now facing the big decision of what career...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <p>Then, the problem is framed in terms of text completion by modifying the dataset. Here we introduce two special tokens that demarcate the instruction and response part of the text. Text between two <span class="text-orange">&lt;USER&gt;</span> tokens is the instruction, and the text between <span class="text-blue">&lt;ASSISTANT&gt;</span> tokens is the expected response <span class="tooltip"><span class="footnote-ref">[3]</span><span class="tooltiptext">These are special tokens, and cannot be detokenized to text. The token ids for the text "&lt;USER&gt;" is not the same as the token id of the special token <span class="text-orange">&lt;USER&gt;</span></span></span>. The first example in the dataset would be re-rewitten as:</p>
+
+    <div class="code-block">
+        <pre><span class="text-orange">&lt;USER&gt;</span>What is the capital of France?<span class="text-orange">&lt;USER&gt;</span><span class="text-blue">&lt;ASSISTANT&gt;</span>The capital of France is Paris.<span class="text-blue">&lt;ASSISTANT&gt;</span></pre>
+    </div>
+
+    <p>This is the new kind of text that the LLM must learn to complete. The LLM is trained in a similar fashion as during pre-training. To simply complete this new type of text we have created.</p>
+
+    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+        <source src="/assets/videos/LLMFinetuningProcess.mp4" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+
+    <h2>Resolving ambiguity with human preferences</h2>
+    <p>The answer to the question <code>What is 4+4?</code> is relatively simple. However, other instructions can be more subjective, they can have multiple possible "correct" answers, how can the LLM choose which one to use?</p>
+
+    <div class="code-block">
+        <p>What is the capital of france?</p>
+        <ol type="a">
+            <li>Paris</li>
+            <li>The capital of France is Paris</li>
+            <li>The current capital of France is Paris, but historically...</li>
+        </ol>
+    </div>
+
+    <p>The solution is to generate answers that humans prefer! This is achieved by <strong>aligning the LLM with the preferences of humans</strong>, as defined by humans themselves.</p>
+    <p>The human preference dataset consists of examples with three components: one instruction and two possible responses.
+        Humans are then tasked with choosing which response they prefer. 
+        This is done for thousands or millions of examples, gathering a diverse dataset of preferences on different topics, tasks, and from different humans.
+    </p>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Instruction</th>
+                    <th>Response 1</th>
+                    <th>Response 2</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>What is the capital of France?</td>
+                    <td>The capital of France is Paris.</td>
+                    <td>Paris</td>
+                </tr>
+                <tr>
+                    <td>What are the three primary colors?</td>
+                    <td>The three primary colors are red, blue, and yellow.</td>
+                    <td>Red, yellow, and blue (RYB).</td>
+                </tr>
+                <tr>
+                    <td>Write a short story in third person narration about a protagonist who has to make an important career decision.</td>
+                    <td>John was at a crossroads in his life. He had just graduated college and was now facing the big decision of what career...</td>
+                    <td>There was once a man. The man was called John. John was worried about whether he should stay at hes current job...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <p></p>
+
+    <p>The training procedure is fundamentally different from previous training steps: intead of training the model to correctly predict the next token, it is trained to correctly predict full responses.</p>
+
+    <ol>
+        <li>Sample an example at random from the dataset</li>
+        <li>Pass the instruction tokens of the example through the LLM</li>
+        <li>Increase the probability of every single token in the favoured response, in that order.</li>
+        <li>Decrease the probability of every single token in the disfavoured response, in that order.</li>
+        <li>Repeat</li>
+    </ol>
+
+    <h2>The best autocomplete</h2>
+    <p>Once an LLM has gone through pre-training, instruction fine-tuning and alignment to human preferences we are left with a model that is capable of writing poems, solving math problems, writing code, and importantly, adhering to human preferences. However, it is important to keep in mind that the LLM still does exactly what it was trained to do: <strong>generate the next token</strong>.</p> -->
+
+</article>
+
+<script type="module" src="/assets/js/blogpost.js"></script>
+
+<link rel="stylesheet" href="/assets/css/blogpost.css">
+  </main>
+  <footer class="site-footer text-center">
+  <div class="footer-content">
+    &copy; 2026 Alfredo V. Clemente
+    <a href="https://github.com/alfredvc" target="_blank" rel="noopener" aria-label="GitHub">
+      <img src="/assets/img/github.svg" alt="GitHub" style="height:24px;width:24px;vertical-align:middle;">
+    </a>
+    <a href="https://linkedin.com/in/alfredvc" target="_blank" rel="noopener" aria-label="LinkedIn">
+      <img src="/assets/img/linkedin.svg" alt="LinkedIn" style="height:24px;width:24px;vertical-align:middle;">
+    </a>
+  </div>
+</footer>
+  
+  <!-- Include main JavaScript for site functionality -->
+  <script src="/assets/js/main.js"></script>
+</body>
+</html>

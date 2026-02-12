@@ -1,2 +1,5 @@
 User-agent: *
-Disallow: /
+Disallow: /interactive-graph.html
+Allow: /
+
+Sitemap: https://alfredvc.no/sitemap.xml

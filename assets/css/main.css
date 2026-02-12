@@ -54,9 +54,9 @@
   --footer-height: 56px;
 }
 
-html, body {
+/* html, body {
   height: 100%;
-}
+} */
 
 html {
   box-sizing: border-box;
@@ -146,7 +146,7 @@ img {
 .mb-sm { margin-bottom: var(--space-sm); }
 
 .site-footer {
-  margin-block: var(--space-lg);
+  height: var(--footer-height)
 }
 
 /* Button styles */
@@ -892,7 +892,7 @@ img {
 /* Publications Page Styles */
 .publications-container {
   max-width: 640px;
-  margin: var(--header-height) auto 0;
+  margin: 0 auto 0;
   padding: var(--space-xl) var(--space-lg) var(--space-xl);
 }
 
@@ -1275,7 +1275,7 @@ img {
 
 /* Non-fullscreen: main scrolls if needed */
 body:not(.fullscreen-page) main {
-  overflow-y: auto;
+  min-height: calc(100dvh - var(--footer-height) - var(--header-height));
 }
 
 main {
