@@ -41,6 +41,7 @@ figure {
 /* Article Container */
 article {
     padding: 3rem 2rem;
+    overflow-x: clip;
     display: grid;
   grid-template-columns: 
     [full-start] minmax(1rem, 1fr) 
@@ -51,6 +52,10 @@ article {
 }
 article > * {
     grid-column: content;
+}
+
+.breakout {
+    grid-column: breakout;
 }
 
 /* Title Section */
@@ -284,7 +289,7 @@ tr:hover {
 
 /* Responsive */
 @media (max-width: 768px) {
-    a {
+    .article-references {
         word-break: break-all;
     }
 

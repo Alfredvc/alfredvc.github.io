@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LLMs in detail | Alfredo</title>
+  <title>Do you even know how LLMs work? | Alfredo</title>
   
   <meta property="og:image" content="https://alfredvc.no/assets/img/llm.png"/>
   
@@ -30,17 +30,17 @@
   
   <nav class="site-nav" aria-label="Main Navigation">
     <a href="/" >Home</a>
-    <a href="/about.html" >About</a>
-    <a href="/blog.html" class="active">Blog</a>
-    <a href="/publications.html" >Publications</a>
-    <a href="/interactive-graph.html" >Interactive Graph</a>
+    <a href="/about" >About</a>
+    <a href="/blog" class="active">Blog</a>
+    <a href="/publications" >Publications</a>
+    <a href="/interactive-graph" >Interactive Graph</a>
   </nav>
 </header>
   <main>
     <article>
     <div class="article-header">
         <div class="article-title">
-            <h1>LLMs in detail</h1>
+            <h1>Do you even know how LLMs work?</h1>
             <h3 class="article-subtitle">What they are, how they work, and how they are trained.</h3>
         </div>
         <p class="article-meta">This post explores LLMs, the models behind services like ChatGPT, Claude, and Gemini. The goal is to give you an in depth but approachable understanding of LLMs, how they work, and how they are trained. We will ignore some details, and provide simplified explanations where appropriate.</p>
@@ -48,12 +48,12 @@
         <p><em><strong>Knowledge of AI methods is not required, this series is aimed at anyone that uses or is interested in AI.</strong></em></p>
         <p>&nbsp;</p>
         <ol>
-            <li><a href ="#what-is-an-llm">What is an LLM?</a></li>
-            <li><a href ="#what-is-an-llm">How do LLMs work?</a></li>
-            <li><a href ="#what-is-an-llm">From monkeys to autocomplete, how LLMs are pre-trained</a></li>
-            <li><a href ="#what-is-an-llm">Assistants, completing a different kind of text</a></li>
-            <li><a href ="#what-is-an-llm">Resolving ambiguity with human preferences</a></li>
-            <li><a href ="#what-is-an-llm">The best autocomplete</a></li>
+            <li><a href="#what-is-an-llm">What is an LLM?</a></li>
+            <li><a href="#generating-text">How do LLMs work?</a></li>
+            <li><a href="#pretraining">From monkeys to autocomplete, how LLMs are pre-trained</a></li>
+            <li><a href="#instruction-finetuning">Assistants, completing a different kind of text</a></li>
+            <li><a href="#aligning-human-preferences">Resolving ambiguity with human preferences</a></li>
+            <li><a href="#conclusion">The best autocomplete</a></li>
         </ol>
     </div>
 
@@ -63,35 +63,35 @@
         These models are the backbone behind popular products like <a href="https://chatgpt.com">ChatGPT</a>, <a href="https://gemini.google.com">Gemini</a>, and <a href="https://claude.ai">Claude</a>.</p>
 
 
-    <p>Conceptually, an LLM can be though of as a black box, that takes as its input some text, and produces the continuation of that text.</p>
+    <p>Conceptually, an LLM can be thought of as a black box, that takes as its input some text, and produces the continuation of that text.</p>
 
     <img class="media" src="/assets/img/llm.png" alt="LLM black box representation."/>
 
     <p>I would describe an LLM as:</p>
-    <p class="emphasized-quote">the worlds most powerful autocomplete</p>
+    <p class="emphasized-quote">the world's most powerful autocomplete</p>
 
     <h3>The language of LLMs</h3>
     <p>LLMs work with <strong><em>tokens</em></strong>, they do not have the concepts of "words", "characters" or "sentences". A token can be one or more characters<span class="tooltip"><span class="footnote-ref">[1]</span><span class="tooltiptext">Some special tokens do not represent any characters at all, we will discuss those later.</span></span>: <code>Hello</code> is a token, but for example the word "Prehistoric" is split into the tokens <code>Pre</code> and <code>historic</code><span class="tooltip"><span class="footnote-ref">[2]</span><span class="tooltiptext">All examples use Llama 3's tokenizer. Other tokenizers will give different results.</span></span>.
     </p>
-    <p>Shakespare's famous quote <code>To be, or not to be, that is the question</code> is divided into the tokens <code>['To', ' be', ',', ' or', ' not', ' to', ' be', ' that', ' is', ' the', ' question']</code>. Each token has its own unique number (its id), for example, the above tokens translate to <code>[1271, 387, 11, 477, 539, 311, 387, 11, 430, 374, 279, 3488]</code>.
+    <p>Shakespeare's famous quote <code>To be, or not to be, that is the question</code> is divided into the tokens <code>['To', ' be', ',', ' or', ' not', ' to', ' be', ' that', ' is', ' the', ' question']</code>. Each token has its own unique number (its id), for example, the above tokens translate to <code>[1271, 387, 11, 477, 539, 311, 387, 11, 430, 374, 279, 3488]</code>.
     </p>
     <img class="media" src="/assets/img/tokenizer.png" alt="Tokenizer converting text to token ids."/>
     
     <p>The tokenizer is the piece of code responsible for converting text into tokens (encoding), as well as converting tokens back into text (decoding).
-        <span class="tooltip"><span class="footnote-ref">[3]</span><span class="tooltiptext">If you want to see tokenization in action and play with it you can go to the great site <a href="https://tiktokenizer.vercel.app/" target="_blank">Tiktokenizer</a>.</p></span></span>
+        <span class="tooltip"><span class="footnote-ref">[3]</span><span class="tooltiptext">If you want to see tokenization in action and play with it you can go to the great site <a href="https://tiktokenizer.vercel.app/" target="_blank">Tiktokenizer</a>.</span></span></p>
 
-    <p>Different tokenizers may assign different ids to the same tokens, so an LLM will usually only work with the tokenizer it was trained with, and return garbage if it receives token ids from another tokenizers.</p>
+    <p>Different tokenizers may assign different ids to the same tokens, so an LLM will usually only work with the tokenizer it was trained with, and return garbage if it receives token ids from another tokenizer.</p>
 
 
-    <p>Tokenizers have a limited size, LLama 3's tokenizer has 128256 unique tokens. Once an LLM is trained with a tokenizer, this list of tokens is referred to as the <strong><em>vocabulary</em></strong> of the LLM. An LLM can never accept tokens that are not in their vocabulary, and it is impossible for them to output anything that is not in their vocabulary.</p>
+    <p>Tokenizers have a limited size, LLama 3's tokenizer has 128,256 unique tokens. Once an LLM is trained with a tokenizer, this list of tokens is referred to as the <strong><em>vocabulary</em></strong> of the LLM. An LLM can never accept tokens that are not in their vocabulary, and it is impossible for them to output anything that is not in their vocabulary.</p>
 
     <p>Tokens ids are the fundamental language that LLMs speak, they expect token ids as inputs, and they produce token ids as outputs.</p>
 
-    <h2 id="generating-text">How do LLMs work?</h3>
+    <h2 id="generating-text">How do LLMs work?</h2>
     <p>The process for generating text with an LLM is conceptually simple. First the text to be completed must be tokenized. Our text
     <code>To be, or not to be, </code> is encoded into its corresponding token ids: <code>[1271, 387, 11, 477, 539, 311, 387, 11]</code>. The token ids are then given to the LLM as input, it processes them, and the chooses the next token. In this case <code>430</code>. This token id is then added to the original list of token ids and the process is repeated.</p>
 
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+    <video class="media" disablepictureinpicture loop autoplay muted playsinline>
         <source src="/assets/videos/LLMInferenceFlow.mp4" type="video/mp4">
         Your browser does not support the video tag.
     </video>
@@ -99,7 +99,7 @@
     <h3 id="choosing-tokens">How a token is actually chosen</h3>
     <p>LLMs do not directly output token ids, they output the <strong>probability of each token id in the vocabulary being the next token</strong>. The output of an LLM defines a probability distribution over the token ids given the input tokens. LLama 3, for example, returns 128256 probabilities.</p>
 
-    <video class="media" controls disablepictureinpicture autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+    <video class="media" disablepictureinpicture autoplay muted playsinline>
         <source src="/assets/videos/TokenDistribution.mp4" type="video/mp4">
         Your browser does not support the video tag.
     </video>
@@ -124,11 +124,11 @@
     <h2 id="pretraining">From monkeys to autocomplete, how LLMs are pre-trained</h2>
     <p>When an LLM is first created, it's like a monkey with a typewriter; regardless of what text you give it, it will return a random token id.</p>
 
-    <p>The goal of pre-training is to imbue an LLM with "general knowledge": how language looks like, how code looks like, facts, how mathematical calculations are performed, etc. This is achieved by <strong>training the LLM to complete text</strong>, ideally all text.</p>
+    <p>The goal of pre-training is to imbue an LLM with "general knowledge": what language looks like, what code looks like, facts, how mathematical calculations are performed, etc. This is achieved by <strong>training the LLM to complete text</strong>, ideally all text.</p>
 
-    <p>First, we must find a dataset that is representative of the kinds of text we wish the model to complete. Companies like OpenAI, Google and Meta have their own proprietary datasets, which are a mix of text from the internet, books, scientific articles, code, etc. These training datasets are in the order of trillions of tokens, which is the in the same order of magnitude as the text contained in all books ever published.</p>
+    <p>First, we must find a dataset that is representative of the kinds of text we wish the model to complete. Companies like OpenAI, Google and Meta have their own proprietary datasets, which are a mix of text from the internet, books, scientific articles, code, etc. These training datasets are on the order of trillions of tokens, which is in the same order of magnitude as the text contained in all books ever published.</p>
 
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+    <video class="media" disablepictureinpicture loop autoplay muted playsinline>
         <source src="/assets/videos/LLMPreTrainingProcess.mp4" type="video/mp4">
         Your browser does not support the video tag.
     </video>
@@ -144,7 +144,7 @@
     <p>This process takes an enormous amount of compute, in the form of thousands of GPU servers, working for months.</p>
 
     <h2 id="instruction-finetuning">Assistants, completing a different kind of text</h2>
-    <p>Once an LLM has been pretrained it is only capable of completing text. What would happen if you were to ask it to "Write a poem"? LLMs are pretrained on a vast amount of text data, you can imagine that the model has seen highschool english homeworks and reddit threads where the text "Write a poem" is followed by " about your first love", or " for a friend". So a pretrained LLM will respond with something along those lines.</p>
+    <p>Once an LLM has been pretrained it is only capable of completing text. What would happen if you were to ask it to "Write a poem"? LLMs are pretrained on a vast amount of text data, you can imagine that the model has seen high school english homeworks and reddit threads where the text "Write a poem" is followed by " about your first love", or " for a friend". So a pretrained LLM will respond with something along those lines.</p>
 
     <p>If you want the LLM to actually write you a poem, further training is required. This is achieved through <strong>instruction fine-tuning</strong>.</p>
 
@@ -177,15 +177,15 @@
         </table>
     </div>
 
-    <p>Then, the problem is framed in terms of text completion by modifying the dataset. Here we introduce two special tokens that demarcate the instruction and response part of the text. Text between two <span class="text-orange">&lt;USER&gt;</span> tokens is the instruction, and the text between <span class="text-blue">&lt;ASSISTANT&gt;</span> tokens is the expected response <span class="tooltip"><span class="footnote-ref">[5]</span><span class="tooltiptext">These are special tokens, and cannot be detokenized to text. The token ids for the text "&lt;USER&gt;" is not the same as the token id of the special token <span class="text-orange">&lt;USER&gt;</span></span></span>. The first example in the dataset would be re-rewitten as:</p>
+    <p>Then, the problem is framed in terms of text completion by modifying the dataset. Here we introduce two special tokens that demarcate the instruction and response part of the text. Text between two <span class="text-orange">&lt;USER&gt;</span> tokens is the instruction, and the text between <span class="text-blue">&lt;ASSISTANT&gt;</span> tokens is the expected response <span class="tooltip"><span class="footnote-ref">[5]</span><span class="tooltiptext">These are special tokens, and cannot be detokenized to text. The token ids for the text "&lt;USER&gt;" is not the same as the token id of the special token <span class="text-orange">&lt;USER&gt;</span></span></span>. The first example in the dataset would be rewritten as:</p>
 
     <div class="code-block">
         <pre><span class="text-orange">&lt;USER&gt;</span>What is the capital of France?<span class="text-orange">&lt;USER&gt;</span><span class="text-blue">&lt;ASSISTANT&gt;</span>The capital of France is Paris.<span class="text-blue">&lt;ASSISTANT&gt;</span></pre>
     </div>
 
-    <p>This is the new kind of text that the LLM must learn to complete. The LLM is trained in a similar fashion as during pre-training. To simply complete this new type of text we have created.</p>
+    <p>This is the new kind of text that the LLM must learn to complete. The LLM is trained in a similar fashion as during pre-training, to simply complete this new type of text we have created.</p>
 
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
+    <video class="media" disablepictureinpicture loop autoplay muted playsinline>
         <source src="/assets/videos/LLMFinetuningProcess.mp4" type="video/mp4">
         Your browser does not support the video tag.
     </video>
@@ -194,7 +194,7 @@
     <p>The answer to the question <code>What is 4+4?</code> is relatively simple. However, other instructions can be more subjective, they can have multiple possible "correct" answers, how can the LLM choose which one to use?</p>
 
     <div class="code-block">
-        <p>What is the capital of france?</p>
+        <p>What is the capital of France?</p>
         <ol type="a">
             <li>Paris</li>
             <li>The capital of France is Paris</li>
@@ -237,9 +237,8 @@
         </table>
     </div>
 
-    <p></p>
 
-    <p>The training procedure is fundamentally different from previous training steps: intead of training the model to correctly predict the next token, it is trained to correctly predict full responses.</p>
+    <p>The training procedure is fundamentally different from previous training steps: instead of training the model to correctly predict the next token, it is trained to correctly predict full responses.</p>
 
     <ol>
         <li>Sample an example at random from the dataset</li>
@@ -252,11 +251,13 @@
     <h2 id="conclusion">The best autocomplete</h2>
     <p>Once an LLM has gone through pre-training, instruction fine-tuning and alignment to human preferences we are left with a model that is capable of writing poems, solving math problems, writing code, and importantly, adhering to human preferences. However, it is important to keep in mind that the LLM still does exactly what it was trained to do: <strong>generate the next token</strong>.</p>
 
-    <h2 id="references">References</h2>
-    <a href="https://www.llama.com/docs/model-cards-and-prompt-formats/llama4/">https://www.llama.com/docs/model-cards-and-prompt-formats/llama4/</a>
-    <a href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/">https://ai.meta.com/blog/llama-4-multimodal-intelligence/</a>
-    <a href="https://ai.meta.com/research/publications/the-llama-3-herd-of-models/">https://ai.meta.com/research/publications/the-llama-3-herd-of-models/</a>
-    <a href="https://docs.vllm.ai/en/v0.6.4/dev/sampling_params.html">https://docs.vllm.ai/en/v0.6.4/dev/sampling_params.html</a>
+    <h2 id="references" class="article-references">References</h2>
+    <ul>
+        <li><a href="https://www.llama.com/docs/model-cards-and-prompt-formats/llama4/">Llama 4 Model Cards and Prompt Formats</a></li>
+        <li><a href="https://ai.meta.com/blog/llama-4-multimodal-intelligence/">Llama 4 Multimodal Intelligence</a></li>
+        <li><a href="https://ai.meta.com/research/publications/the-llama-3-herd-of-models/">The Llama 3 Herd of Models</a></li>
+        <li><a href="https://docs.vllm.ai/en/v0.6.4/dev/sampling_params.html">vLLM Sampling Parameters</a></li>
+    </ul>
 
 </article>
 
