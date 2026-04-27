@@ -47,7 +47,7 @@
         <p class="article-author">By Alfredo V. Clemente</p>
         <p class="article-meta">This post explores LLMs, the models behind services like ChatGPT, Claude, and Gemini. The goal is to give you an in depth but approachable understanding of LLMs, how they work, and how they are trained. We will ignore some details, and provide simplified explanations where appropriate.</p>
         <p>&nbsp;</p>
-        <p><em><strong>Knowledge of AI methods is not required, this series is aimed at anyone that uses or is interested in AI.</strong></em></p>
+        <p><em><strong>Knowledge of AI methods is not required, this blog post is aimed at anyone that uses or is interested in AI.</strong></em></p>
         <p>&nbsp;</p>
         <ol>
             <li><a href="#what-is-an-llm">What is an LLM?</a></li>
@@ -193,7 +193,7 @@
     </video>
 
     <h2 id="aligning-human-preferences">Resolving ambiguity with human preferences</h2>
-    <p>Consider the instruction: <code>Explain why the sky is blue</code>. An instruction fine-tuned could respond in many valid ways:</p>
+    <p>Consider the instruction: <code>Explain why the sky is blue</code>. An instruction fine-tuned model could respond in many valid ways:</p>
 
     <div class="code-block">
         <ol>
@@ -204,7 +204,7 @@
     </div>
 
     <p>All three are correct but they feel different. The first one is overly technical, the third one sounds almost condescending. The second one is probably what most people want.
-        An instruction fine-tuned model has no way of knowing which one to prefer, to they are all equally valid.</p>
+        An instruction fine-tuned model has no way of knowing which one to prefer, they are all equally valid.</p>
     <p>The solution, of course, is to generate answers that humans prefer! This is achieved by <strong>aligning the LLM with the preferences of humans</strong>, as defined by humans themselves.</p>
 
     <p>The human preference dataset consists of examples with three components: one instruction and two possible responses.
@@ -239,11 +239,7 @@
         </table>
     </div>
 
-    <p>Humans are then tasked with choosing which response they prefer. 
-        This is done for thousands or millions of examples, gathering a diverse dataset of preferences on different topics, tasks, and from different humans. The model is then trained to prefer the same response as the human chose</p>
-
-    
-
+    <p>Humans are then tasked with choosing which response they prefer. This is done for thousands or millions of examples, gathering a diverse dataset of preferences on different topics, tasks, and from different humans. The model is then trained to prefer the same response as the human chose.</p>
 
     <p>The training procedure is fundamentally different from previous training steps: instead of training the model to correctly predict the next token, it is trained to correctly predict full responses.</p>
 
