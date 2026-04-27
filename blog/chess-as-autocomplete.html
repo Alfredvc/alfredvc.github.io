@@ -37,25 +37,17 @@
   </nav>
 </header>
   <main>
-    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboard2@0.5.0/dist/chessboard2.min.css"
-    integrity="sha384-47VeTDpmy4yT21gKPXQcLQYQZwlmz27gEH5NTrOmTk3G/SGvMyltclOW/Q8uE+sL" crossorigin="anonymous">
-
-<!-- add JS via CDN: -->
-<script src="https://unpkg.com/@chrisoakman/chessboard2@0.5.0/dist/chessboard2.min.js"
-    integrity="sha384-/KwQCjA1GWovZNV3QDVtvSMDzO4reGgarF/RqHipr7hIUElH3r5zNl9WEPPOBRIF"
-    crossorigin="anonymous"></script>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.1/chess.js"
-    integrity="sha384-8sJV/krC8iV2g7t0PolQxFVckDtxhfM5gNHNAFPG2ZS/bScudOjfsB8ewhG2xle8"
-    crossorigin="anonymous"></script>
-
-<!-- ONNX Runtime for WebGPU -->
+    <!-- ONNX Runtime for WebGPU -->
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.wasm.min.js"></script>
+
 <script src="/assets/js/chess-lib.min.js"></script> 
+<link rel="stylesheet" href="/assets/css/chess-lib.min.css">
 
     <script>
         window.onload = async () => {
-            const game = new ChessGame({
+            const game = new ChessApp.ChessGame({
                 models: [
                     { path: '/assets/model-quant.onnx', label: 'BobbyQuant', size: '87MB' },
                 ],
@@ -263,7 +255,6 @@
 
 </article>
 
-<script type="module" src="/assets/js/blogpost.js"></script>
 
 <link rel="stylesheet" href="/assets/css/blogpost.css">
   </main>

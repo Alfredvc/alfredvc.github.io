@@ -1,11 +1,12 @@
 :root {
-    --primary-blue: #00a6fb;
-    --text-dark: #1a1a1a;
-    --text-gray: #4a4a4a;
-    --text-light: #666;
-    --background: #ffffff;
-    --border-color: #e0e0e0;
-    --hover-bg: #f8f9fa;
+    --color-blog-accent: #00a6fb;
+    --color-blog-heading: #1a1a1a;
+    --color-blog-text: #4a4a4a;
+    --color-blog-meta: #666;
+    --color-blog-border: #e0e0e0;
+    --color-blog-hover: #f8f9fa;
+    --color-blog-tag-bg: #f0f0f0;
+    --color-blog-tag-hover: #e0e0e0;
 }
 
 .blogs-container {
@@ -22,9 +23,9 @@
 .page-title {
     font-size: 2.5rem;
     font-weight: 700;
-    color: var(--text-dark);
+    color: var(--color-blog-heading);
     padding-bottom: 1rem;
-    border-bottom: 3px solid var(--primary-blue);
+    border-bottom: 3px solid var(--color-blog-accent);
     display: inline-block;
 }
 
@@ -41,7 +42,7 @@
     grid-template-columns: 300px 1fr;
     gap: 2rem;
     padding-bottom: 3rem;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--color-blog-border);
     transition: background 0.2s;
 }
 
@@ -50,7 +51,7 @@
 }
 
 .blog-post:hover {
-    background: var(--hover-bg);
+    background: var(--color-blog-hover);
     margin: -1rem;
     padding: 1rem;
     padding-bottom: 4rem;
@@ -91,38 +92,26 @@
 }
 
 .blog-date {
-    color: var(--text-light);
+    color: var(--color-blog-meta);
     font-size: 0.9rem;
 }
 
 .blog-reading-time {
-    color: var(--text-light);
+    color: var(--color-blog-meta);
     font-size: 0.9rem;
 }
 
 .blog-meta-separator {
-    color: var(--border-color);
+    color: var(--color-blog-border);
 }
 
 .blog-title {
     margin-bottom: 0.5rem;
 }
 
-/* .blog-title a {
-    color: var(--primary-blue);
-    text-decoration: none;
-    font-size: 1.5rem;
-    font-weight: 600;
-    transition: opacity 0.2s;
-}
-
-.blog-title a:hover {
-    opacity: 0.7;
-    text-decoration: underline;
-} */
 
 .blog-subtitle {
-    color: var(--text-gray);
+    color: var(--color-blog-text);
     font-style: italic;
     margin-bottom: 1rem;
     font-size: 0.95rem;
@@ -130,7 +119,7 @@
 }
 
 .blog-description {
-    color: var(--text-gray);
+    color: var(--color-blog-text);
     margin-bottom: 1rem;
     line-height: 1.6;
     font-size: 0.95rem;
@@ -144,8 +133,8 @@
 }
 
 .blog-tag {
-    background: #f0f0f0;
-    color: var(--text-gray);
+    background: var(--color-blog-tag-bg);
+    color: var(--color-blog-text);
     padding: 0.3rem 0.75rem;
     border-radius: 4px;
     font-size: 0.85rem;
@@ -153,7 +142,7 @@
 }
 
 .blog-tag:hover {
-    background: #e0e0e0;
+    background: var(--color-blog-tag-hover);
 }
 
 

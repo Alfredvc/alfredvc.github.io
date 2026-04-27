@@ -33,11 +33,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Close mobile menu on window resize if it gets too wide
+    let resizeTimer;
     window.addEventListener('resize', function() {
-      if (window.innerWidth > 768 && siteNav.classList.contains('mobile-nav-open')) {
-        mobileMenuToggle.classList.remove('active');
-        siteNav.classList.remove('mobile-nav-open');
-      }
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function() {
+        if (window.innerWidth > 768 && siteNav.classList.contains('mobile-nav-open')) {
+          mobileMenuToggle.classList.remove('active');
+          siteNav.classList.remove('mobile-nav-open');
+        }
+      }, 150);
     });
   }
 });

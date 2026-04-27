@@ -146,7 +146,7 @@ img {
 .mb-sm { margin-bottom: var(--space-sm); }
 
 .site-footer {
-  height: var(--footer-height)
+  height: var(--footer-height);
 }
 
 /* Button styles */
@@ -769,130 +769,10 @@ img {
   padding: var(--space-lg) 0;
 }
 
-.project-detail-container {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 0 var(--space-lg);
-}
-
-.project-breadcrumb {
-  margin-bottom: var(--space-md);
-}
-
-.project-breadcrumb a {
-  font-size: var(--font-size-small);
-  color: var(--color-meta);
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.project-breadcrumb a:hover {
-  color: var(--color-accent);
-}
-
-.project-detail-title {
-  font-size: var(--font-size-hero);
-  font-weight: 700;
-  color: var(--color-text-heading);
-  margin: 0 0 var(--space-md) 0;
-  line-height: 1.2;
-}
-
-.project-meta {
-  display: flex;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-  font-size: var(--font-size-small);
-}
-
-.project-date,
-.project-category {
-  color: var(--color-meta);
-  font-weight: 500;
-}
-
-.project-category {
-  padding: 4px 8px;
-  background: var(--color-accent-tint);
-  color: var(--color-accent);
-  border-radius: var(--radius-sharp);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.project-detail .project-tags {
-  margin-bottom: var(--space-lg);
-}
-
-.project-links {
-  display: flex;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-}
-
-.project-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  padding: 12px var(--space-md);
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-main);
-  text-decoration: none;
-  border-radius: var(--radius-sharp);
-  font-size: var(--font-size-small);
-  font-weight: 500;
-  transition: all 0.15s;
-}
-
-.project-btn:hover {
-  background: var(--color-light-gray);
-  border-color: var(--color-accent);
-  color: var(--color-text-heading);
-}
-
-.project-btn-primary {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-bg);
-}
-
-.project-btn-primary:hover {
-  background: var(--color-btn-hover);
-  border-color: var(--color-btn-hover);
-  color: var(--color-bg);
-}
-
-.project-detail-content {
-  padding: var(--space-xl) 0;
-}
-
-.project-detail-content h2 {
-  margin-top: var(--space-xl);
-  margin-bottom: var(--space-md);
-}
-
-.project-detail-content h3 {
-  margin-top: var(--space-lg);
-  margin-bottom: var(--space-sm);
-}
-
-.project-detail-content ul,
-.project-detail-content ol {
-  margin: var(--space-sm) 0;
-  padding-left: var(--space-lg);
-}
-
-.project-detail-content li {
-  margin-bottom: var(--space-xs);
-  line-height: 1.6;
-}
-
 /* Publications Page Styles */
 .publications-container {
   max-width: 640px;
-  margin: 0 auto 0;
+  margin: 0 auto;
   padding: var(--space-xl) var(--space-lg) var(--space-xl);
 }
 
@@ -974,7 +854,7 @@ img {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #eee;
+  background: var(--color-light-gray);
   color: var(--color-meta);
   border: none;
   cursor: pointer;
@@ -1004,18 +884,18 @@ img {
   padding: 0 var(--space-lg);
 }
 
-.publication-breadcrumb {
+.detail-breadcrumb {
   margin-bottom: var(--space-md);
 }
 
-.publication-breadcrumb a {
+.detail-breadcrumb a {
   font-size: var(--font-size-small);
   color: var(--color-meta);
   text-decoration: none;
   transition: color 0.15s;
 }
 
-.publication-breadcrumb a:hover {
+.detail-breadcrumb a:hover {
   color: var(--color-accent);
 }
 
@@ -1057,7 +937,7 @@ img {
   font-weight: 500;
 }
 
-.publication-btn {
+.detail-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
@@ -1072,19 +952,19 @@ img {
   transition: all 0.15s;
 }
 
-.publication-btn:hover {
+.detail-btn:hover {
   background: var(--color-light-gray);
   border-color: var(--color-accent);
   color: var(--color-text-heading);
 }
 
-.publication-btn-primary {
+.detail-btn-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-bg);
 }
 
-.publication-btn-primary:hover {
+.detail-btn-primary:hover {
   background: var(--color-btn-hover);
   border-color: var(--color-btn-hover);
   color: var(--color-bg);
@@ -1239,7 +1119,7 @@ img {
     font-size: 28px;
   }
   
-  .publication-btn {
+  .detail-btn {
     justify-content: center;
   }
 }

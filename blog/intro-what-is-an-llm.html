@@ -43,6 +43,7 @@
             <h1>Do you even know how LLMs work?</h1>
             <h3 class="article-subtitle">What they are, how they work, and how they are trained.</h3>
         </div>
+        <p class="article-author">By Alfredo V. Clemente</p>
         <p class="article-meta">This post explores LLMs, the models behind services like ChatGPT, Claude, and Gemini. The goal is to give you an in depth but approachable understanding of LLMs, how they work, and how they are trained. We will ignore some details, and provide simplified explanations where appropriate.</p>
         <p>&nbsp;</p>
         <p><em><strong>Knowledge of AI methods is not required, this series is aimed at anyone that uses or is interested in AI.</strong></em></p>
@@ -63,7 +64,7 @@
         These models are the backbone behind popular products like <a href="https://chatgpt.com">ChatGPT</a>, <a href="https://gemini.google.com">Gemini</a>, and <a href="https://claude.ai">Claude</a>.</p>
 
 
-    <p>Conceptually, an LLM can be thought of as a black box, that takes as its input some text, and produces the continuation of that text.</p>
+    <p>Conceptually, an LLM can be thought of as a black box, that takes some text as its input, and produces the continuation of that text.</p>
 
     <img class="media" src="/assets/img/llm.png" alt="LLM black box representation."/>
 
@@ -73,7 +74,7 @@
     <h3>The language of LLMs</h3>
     <p>LLMs work with <strong><em>tokens</em></strong>, they do not have the concepts of "words", "characters" or "sentences". A token can be one or more characters<span class="tooltip"><span class="footnote-ref">[1]</span><span class="tooltiptext">Some special tokens do not represent any characters at all, we will discuss those later.</span></span>: <code>Hello</code> is a token, but for example the word "Prehistoric" is split into the tokens <code>Pre</code> and <code>historic</code><span class="tooltip"><span class="footnote-ref">[2]</span><span class="tooltiptext">All examples use Llama 3's tokenizer. Other tokenizers will give different results.</span></span>.
     </p>
-    <p>Shakespeare's famous quote <code>To be, or not to be, that is the question</code> is divided into the tokens <code>['To', ' be', ',', ' or', ' not', ' to', ' be', ' that', ' is', ' the', ' question']</code>. Each token has its own unique number (its id), for example, the above tokens translate to <code>[1271, 387, 11, 477, 539, 311, 387, 11, 430, 374, 279, 3488]</code>.
+    <p>Shakespeare's famous quote <code>To be, or not to be, that is the question</code> is divided into the tokens <code>['To', ' be', ',', ' or', ' not', ' to', ' be', ',', ' that', ' is', ' the', ' question']</code>. Each token has its own unique number (its id), for example, the above tokens translate to <code>[1271, 387, 11, 477, 539, 311, 387, 11, 430, 374, 279, 3488]</code>.
     </p>
     <img class="media" src="/assets/img/tokenizer.png" alt="Tokenizer converting text to token ids."/>
     
@@ -83,13 +84,13 @@
     <p>Different tokenizers may assign different ids to the same tokens, so an LLM will usually only work with the tokenizer it was trained with, and return garbage if it receives token ids from another tokenizer.</p>
 
 
-    <p>Tokenizers have a limited size, LLama 3's tokenizer has 128,256 unique tokens. Once an LLM is trained with a tokenizer, this list of tokens is referred to as the <strong><em>vocabulary</em></strong> of the LLM. An LLM can never accept tokens that are not in their vocabulary, and it is impossible for them to output anything that is not in their vocabulary.</p>
+    <p>Tokenizers have a limited size, Llama 3's tokenizer has 128,256 unique tokens. Once an LLM is trained with a tokenizer, this list of tokens is referred to as the <strong><em>vocabulary</em></strong> of the LLM. An LLM can never accept tokens that are not in their vocabulary, and it is impossible for them to output anything that is not in their vocabulary.</p>
 
     <p>Tokens ids are the fundamental language that LLMs speak, they expect token ids as inputs, and they produce token ids as outputs.</p>
 
     <h2 id="generating-text">How do LLMs work?</h2>
     <p>The process for generating text with an LLM is conceptually simple. First the text to be completed must be tokenized. Our text
-    <code>To be, or not to be, </code> is encoded into its corresponding token ids: <code>[1271, 387, 11, 477, 539, 311, 387, 11]</code>. The token ids are then given to the LLM as input, it processes them, and the chooses the next token. In this case <code>430</code>. This token id is then added to the original list of token ids and the process is repeated.</p>
+    <code>To be, or not to be, </code> is encoded into its corresponding token ids: <code>[1271, 387, 11, 477, 539, 311, 387, 11]</code>. The token ids are then given to the LLM as input, it processes them, and then chooses the next token. In this case <code>430</code>. This token id is then added to the original list of token ids and the process is repeated.</p>
 
     <video class="media" disablepictureinpicture loop autoplay muted playsinline>
         <source src="/assets/videos/LLMInferenceFlow.mp4" type="video/mp4">
@@ -97,7 +98,7 @@
     </video>
 
     <h3 id="choosing-tokens">How a token is actually chosen</h3>
-    <p>LLMs do not directly output token ids, they output the <strong>probability of each token id in the vocabulary being the next token</strong>. The output of an LLM defines a probability distribution over the token ids given the input tokens. LLama 3, for example, returns 128256 probabilities.</p>
+    <p>LLMs do not directly output token ids, they output the <strong>probability of each token id in the vocabulary being the next token</strong>. The output of an LLM defines a probability distribution over the token ids given the input tokens. Llama 3, for example, returns 128,256 probabilities.</p>
 
     <video class="media" disablepictureinpicture autoplay muted playsinline>
         <source src="/assets/videos/TokenDistribution.mp4" type="video/mp4">
@@ -117,7 +118,7 @@
         </caption>
     </figure>
 
-    <p>One crucial point I want to leave you with is that regardless of their amazing capabilities and near magical appeal: </p>
+    <p>One crucial point to take away is that regardless of their amazing capabilities and near magical appeal: </p>
     <p class="emphasized-quote">The only thing LLMs do is predict the next token</p>
     <p>Everything else is accomplished by cleverly framing problems as token prediction.</p>
 
@@ -137,20 +138,20 @@
     <ol>
         <li>Sample an example at random from the dataset</li>
         <li>Pass the first N tokens of the example through the LLM</li>
-        <li>Increase the probability of the Nth+1 token</li>
+        <li>Increase the probability of the (N+1)th token</li>
         <li>Repeat</li>
     </ol>
 
     <p>This process takes an enormous amount of compute, in the form of thousands of GPU servers, working for months.</p>
 
     <h2 id="instruction-finetuning">Assistants, completing a different kind of text</h2>
-    <p>Once an LLM has been pretrained it is only capable of completing text. What would happen if you were to ask it to "Write a poem"? LLMs are pretrained on a vast amount of text data, you can imagine that the model has seen high school english homeworks and reddit threads where the text "Write a poem" is followed by " about your first love", or " for a friend". So a pretrained LLM will respond with something along those lines.</p>
+    <p>Once an LLM has been pretrained it is only capable of completing text. What would happen if we were to ask it to "Write a poem"? LLMs are pretrained on a vast amount of text data, we can imagine that the model has seen high school English homework and Reddit threads where the text "Write a poem" is followed by " about your first love", or " for a friend". So a pretrained LLM will respond with something along those lines.</p>
 
-    <p>If you want the LLM to actually write you a poem, further training is required. This is achieved through <strong>instruction fine-tuning</strong>.</p>
+    <p>If we want the LLM to actually write us a poem, further training is required. This is achieved through <strong>instruction fine-tuning</strong>.</p>
 
     <p>Instruction fine-tuning frames the problem of instruction following into something that LLMs do understand, <em>text completion</em>.</p>
 
-    <p>The first step is to create a dataset of the kinds of instruction-response pairs you wish the LLM to be able to follow. For example:</p>
+    <p>The first step is to create a dataset of the kinds of instruction-response pairs we wish the LLM to be able to follow. For example:</p>
 
     <div class="table-wrapper">
         <table>
@@ -191,21 +192,21 @@
     </video>
 
     <h2 id="aligning-human-preferences">Resolving ambiguity with human preferences</h2>
-    <p>The answer to the question <code>What is 4+4?</code> is relatively simple. However, other instructions can be more subjective, they can have multiple possible "correct" answers, how can the LLM choose which one to use?</p>
+    <p>Consider the instruction: <code>Explain why the sky is blue</code>. An instruction fine-tuned could respond in many valid ways:</p>
 
     <div class="code-block">
-        <p>What is the capital of France?</p>
-        <ol type="a">
-            <li>Paris</li>
-            <li>The capital of France is Paris</li>
-            <li>The current capital of France is Paris, but historically...</li>
+        <ol>
+            <li><i>Rayleigh scattering of sunlight by Earth's atmosphere preferentially disperses shorter wavelengths...</i></li>
+            <li><i>The sky is blue because the air scatters blue light from the sun more than other colors.</i></li>
+            <li><i>Great question! So, imagine sunlight is like a bag of mixed candy...</i></li>
         </ol>
     </div>
 
-    <p>The solution is to generate answers that humans prefer! This is achieved by <strong>aligning the LLM with the preferences of humans</strong>, as defined by humans themselves.</p>
+    <p>All three are correct but they feel different. The first one is overly technical, the third one sounds almost condescending. The second one is probably what most people want.
+        An instruction fine-tuned model has no way of knowing which one to prefer, to they are all equally valid.</p>
+    <p>The solution, of course, is to generate answers that humans prefer! This is achieved by <strong>aligning the LLM with the preferences of humans</strong>, as defined by humans themselves.</p>
+
     <p>The human preference dataset consists of examples with three components: one instruction and two possible responses.
-        Humans are then tasked with choosing which response they prefer. 
-        This is done for thousands or millions of examples, gathering a diverse dataset of preferences on different topics, tasks, and from different humans.
     </p>
 
     <div class="table-wrapper">
@@ -219,9 +220,9 @@
             </thead>
             <tbody>
                 <tr>
-                    <td>What is the capital of France?</td>
-                    <td>The capital of France is Paris.</td>
-                    <td>Paris</td>
+                    <td>Explain why the sky is blue</td>
+                    <td>Rayleigh scattering of sunlight by Earth's atmosphere...</td>
+                    <td>The sky is blue because the air scatters blue light from...</td>
                 </tr>
                 <tr>
                     <td>What are the three primary colors?</td>
@@ -231,11 +232,16 @@
                 <tr>
                     <td>Write a short story in third person narration about a protagonist who has to make an important career decision.</td>
                     <td>John was at a crossroads in his life. He had just graduated college and was now facing the big decision of what career...</td>
-                    <td>There was once a man. The man was called John. John was worried about whether he should stay at hes current job...</td>
+                    <td>There was once a man. The man was called John. John was worried about whether he should stay at his current job...</td>
                 </tr>
             </tbody>
         </table>
     </div>
+
+    <p>Humans are then tasked with choosing which response they prefer. 
+        This is done for thousands or millions of examples, gathering a diverse dataset of preferences on different topics, tasks, and from different humans. The model is then trained to prefer the same response as the human chose</p>
+
+    
 
 
     <p>The training procedure is fundamentally different from previous training steps: instead of training the model to correctly predict the next token, it is trained to correctly predict full responses.</p>
@@ -261,7 +267,6 @@
 
 </article>
 
-<script type="module" src="/assets/js/blogpost.js"></script>
 
 <link rel="stylesheet" href="/assets/css/blogpost.css">
   </main>
