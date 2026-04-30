@@ -9,6 +9,13 @@
   
   <meta property="og:description" content="In this post we will explore training a transformer model from scratch to play chess following the same procedures used to train modern LLMs."/>
   <link rel="stylesheet" href="/assets/css/main.css">
+  
+    
+  <link rel="stylesheet" href="/assets/css/chess-lib.min.css">
+    
+  <link rel="stylesheet" href="/assets/css/blogpost.css">
+    
+  
   <link rel="icon" href="/assets/img/me.jpg">
   <!-- <link rel="preload" as="font" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;500;600;700;800&display=swap">
   <link rel="preload" as="font" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"> -->
@@ -44,8 +51,6 @@
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.wasm.min.js"></script>
 
 <script src="/assets/js/chess-lib.min.js"></script> 
-<link rel="stylesheet" href="/assets/css/chess-lib.min.css">
-
     <script>
         window.onload = async () => {
             const game = new ChessApp.ChessGame({
@@ -256,8 +261,6 @@
 
 </article>
 
-
-<link rel="stylesheet" href="/assets/css/blogpost.css">
   </main>
   <footer class="site-footer text-center">
   <div class="footer-content">
