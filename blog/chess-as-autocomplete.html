@@ -3,17 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Part 1: Chess as autocomplete | Alfredo</title>
+  <title>Chess as autocomplete | Alfredo</title>
   
-  <meta property="og:image" content="https://alfredvc.no/assets/img/coming-soon.png"/>
+  <meta property="og:image" content="https://alfredvc.no/assets/img/chess-autocomplete-card.png"/>
   
   <meta property="og:description" content="In this post we will explore training a transformer model from scratch to play chess following the same procedures used to train modern LLMs."/>
   <link rel="stylesheet" href="/assets/css/main.css">
   
     
-  <link rel="stylesheet" href="/assets/css/chess-lib.min.css">
+  <link rel="stylesheet" href="/assets/css/chess-autocomplete.css">
     
   <link rel="stylesheet" href="/assets/css/blogpost.css">
+    
+  <link rel="stylesheet" href="/assets/css/chess-post.css">
     
   
   <link rel="icon" href="/assets/img/me.jpg">
@@ -46,218 +48,1499 @@
 </header>
   <main>
     <!-- ONNX Runtime for WebGPU -->
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.wasm.min.js"></script>
+<!-- Pinned: 1.25+ regresses provider assignment for BF16 initializer Cast nodes. -->
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.24.3/dist/ort.webgpu.min.js"></script>
 
-<script src="/assets/js/chess-lib.min.js"></script> 
-    <script>
-        window.onload = async () => {
-            const game = new ChessApp.ChessGame({
-                models: [
-                    { path: '/assets/model-quant.onnx', label: 'BobbyQuant', size: '87MB' },
-                ],
-                containerId: 'chess-container'
-            });
-            await game.init();
-        };
-    </script>
+<script src="/assets/js/chess-autocomplete.iife.js"></script>
+<script src="/assets/js/blog-deepdive.js" defer></script>
+<script src="/assets/js/strength-chart.js" defer></script>
+<script>
+    window.onload = async () => {
+        const modelUrl = 'https://huggingface.co/Alfredvc/chess-autocomplete-v1/resolve/main/model-bf16-fp32compute.onnx';
+        const game = new ChessApp.ChessGame({
+
+            theme: {
+                mode: "light",
+                showPicker: false
+            },
+            models: [
+                {
+                    path: modelUrl,
+                    label: 'chess-autocomplete-v1',
+                    size: '220MB',
+                    outputMode: 'bin_logits_v1',
+                    addMetadataTokens: true,
+                    metadata: {
+                        timeControl: 'rapid',
+                        whiteElo: 2500,
+                        blackElo: 2500
+                    }
+                },
+            ],
+            containerId: 'chess-container',
+            onnxRuntime: window.ort,
+            onnxSessionOptions: {
+                executionProviders: ['webgpu', 'wasm'],
+                preferredOutputLocation: 'cpu'
+            }
+        });
+        await game.init();
+    };
+</script>
 <article>
     <div class="article-header">
         <div class="article-title">
-            <h1>Part 1: Chess as autocomplete</h1>
-            <h3 class="article-subtitle">Can autocomplete play chess? A journey into applied AI research</h3>
+            <h1>Chess as autocomplete</h1>
+            <h3 class="article-subtitle">Can autocomplete play chess blindfolded? A journey into applied AI research</h3>
         </div>
-        <p class="article-meta">In this post we will explore training a transformer model from scratch to play chess following the same procedures used to train modern LLMs.</p>
+        <p class="article-author">By Alfredo V. Clemente</p>
+
+        <div id="chess-container"></div>
+        <p class="diagram-caption">Play against the final model directly in your browser.</p>
+
+        <nav class="article-toc">
+            <span class="article-toc-title">Contents</span>
+            <ol>
+                <li><a href="#why-and-what">Why and what?</a></li>
+                <li><a href="#limitations">Hardware and compute</a></li>
+                <li><a href="#pretraining">Pre-training</a></li>
+                <li><a href="#baseline">A baseline, we have to start somewhere</a></li>
+                <li><a href="#improving-baseline">Improving the baseline model</a></li>
+                <li><a href="#final-model">The final model</a></li>
+                <li><a href="#results">So, can autocomplete play chess blindfolded?</a></li>
+                <li><a href="#comparison">How does it compare to the state of the art?</a></li>
+                <li><a href="#conclusion">Blindfolded, and near the top</a></li>
+                <li><a href="#play">That board at the top? It's the full model</a></li>
+            </ol>
+        </nav>
+
+        <div class="post-tldr">
+            <span class="post-tldr-title">TL;DR</span>
+            <p>A 91M-parameter transformer sees nothing but chess moves, never the board, never the rules. It learns to play blindfolded at near-state-of-the-art human-move accuracy, purely by getting good at predicting the next token.</p>
+        </div>
     </div>
-    
+
     <div class="article-divider"></div>
-    <div id="chess-container"></div>
 
-    <!-- <h2>Part 1: An introduction to LLMs</h2>
-    <p><em>Here we will ignore some details, and provide simplified explanations where appropriate. Our focus is to build a useful mental model of what LLMs are, how they work, and how they are trained.</em></p>
-
-    <p>I would describe an LLM as:</p>
-    <p class="emphasized-quote">the worlds most powerful autocomplete</p>
-
-    <p>Conceptually, an LLM can be though of as a black box, that takes as its input some text, and produces the continuation of that text.</p>
-
-    <img class="media" src="/assets/img/llm.png" alt="LLM black box representation."/>
-
-    <h3>The language of LLMs</h3>
-    <p>LLMs work with <strong><em>tokens</em></strong>, they do not have the concepts of "words", "characters" or "sentences". A token can be one or more characters<span class="tooltip"><span class="footnote-ref">[1]</span><span class="tooltiptext">Some special tokens do not represent any characters at all, we will discuss those later.</span></span>: <code>Hello</code> is a token, but for example the word "Prehistoric" is split into the tokens <code>Pre</code> and <code>historic</code><span class="tooltip"><span class="footnote-ref">[2]</span><span class="tooltiptext">All examples use Llama 3's tokenizer. Other tokenizers will give different results.</span></span>.
-    Shakespare's famous quote <code>To be, or not to be, that is the question</code> is divided into the tokens <code>['To', ' be', ',', ' or', ' not', ' to', ' be', ' that', ' is', ' the', ' question']</code>. Each token has its own unique number (its id), for example, the above tokens translate to <code>[1271, 387, 11, 477, 539, 311, 387, 11, 430, 374, 279, 3488]</code>. The tokenizer is the piece of code responsible for converting text into tokens (encoding), as well as converting tokens back into text (decoding). If you want to see tokenization in action and play with it you can go to the great site <a href="https://tiktokenizer.vercel.app/" target="_blank">Tiktokenizer</a>.</p>
-
-    <p>Different tokenizers may assign different ids to the same tokens, so an LLM will usually only work with the tokenizer it was trained with, and return garbage if it receives token ids from another tokenizers.</p>
-
-    <img class="media" src="/assets/img/tokenizer.png" alt="Tokenizer converting text to token ids."/>
-
-    <p>Tokenizers have a limited size, LLama 3's tokenizer has 128256 unique tokens. Once an LLM is trained with a tokenizer, this list of tokens is referred to as the <strong><em>vocabulary</em></strong> of the LLM. An LLM can never accept tokens that are not in their vocabulary, and it is impossible for them to output anything that is not in their vocabulary.</p>
-
-    <p>Tokens ids are the fundamental language that LLMs speak, they expect token ids as inputs, and they produce token ids as outputs.</p>
-
-    <h3>Generating text</h3>
-    <p>The process for generating text with an LLM is conceptually simple. First the text to be completed must be tokenized. Our text
-    <code>To be, or not to be, </code> is encoded into its corresponding token ids: <code>[1271, 387, 11, 477, 539, 311, 387, 11]</code>. The token ids are then given to the LLM as input, it processes them, and the chooses the next token. In this case <code>430</code>. This token id is then added to the original list of token ids and the process is repeated.</p>
-
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
-        <source src="/assets/videos/LLMInferenceFlow.mp4" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
-
-    <h3>How a token is actually chosen</h3>
-    <p>LLMs do not directly output token ids, they output the <strong>probability of each token id in the vocabulary being the next token</strong>. The output of an LLM defines a probability distribution over the token ids given the input tokens. LLama 3, for example, returns 128256 probabilities.</p>
-
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
-        <source src="/assets/videos/TokenDistribution.mp4" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
-
-    <p>The process of choosing a specific token id from the probability distribution over all possible next token ids is called sampling.
-    The simplest way to sample is to simply pick the token id that has the highest probability.
-    The choice of sampling procedure can have large effects on the output of an LLM, and is something that must be carefully tuned when using LLMs to solve specific tasks.</p>
-
-    <figure>
-        <img class="media-with-caption" src="/assets/img/sampling.png" alt="Next token sampling options."/>
-        <caption>
-            <p class="media-caption">Options usually exposed by LLM providers to adjust the sampling procedure</p>
-        </caption>
+    <p>In <a href="/blog/intro-what-is-an-llm">my previous article</a>, we built a mental model of LLMs as autocomplete.</p>
+    <p>A quick recap, this means that LLMs are given the sentence</p>
+    <figure class="token-complete" aria-label="An LLM predicting the next token from a sentence">
+        <div class="token-complete-in">
+            <span class="token token-move">To</span>
+            <span class="token token-move">be</span>
+            <span class="token token-move">,</span>
+            <span class="token token-move">or</span>
+            <span class="token token-move">not</span>
+            <span class="token token-move">to</span>
+            <span class="token token-move">be</span>
+            <span class="token token-move">,</span>
+        </div>
+        <div class="token-complete-arrow" aria-hidden="true">
+            <span class="token-complete-chevron">&#8595;</span>
+        </div>
+        <div class="token-complete-out">
+            <span class="token token-predicted">that</span>
+        </div>
     </figure>
 
-    <p>One crucial point I want to leave you with is that regardless of their amazing capabilities and near magical appeal: </p>
-    <p class="emphasized-quote">The only thing LLMs do is predict the next token</p>
-    <p>Everything else is accomplished by cleverly framing problems as token prediction.</p>
+    <p>and simply predict the next token.</p>
 
-    <h2>From monkeys to autocomplete, how LLMs are pre-trained</h2>
-    <p>When an LLM is first created, it's like a monkey with a typewriter; regardless of what text you give it, it will return a random token id.</p>
+    <p>So theoretically, if we frame game of chess as a language autocomplete problem we should be able to train an LLM to play chess.</p>
 
-    <p>The goal of pre-training is to imbue an LLM with "general knowledge": how language looks like, how code looks like, facts, how mathematical calculations are performed, etc. This is achieved by <strong>training the LLM to complete text</strong>, ideally all text.</p>
+    <p class="emphasized-quote">Can we train a transformer to play chess blindfolded by auto-completing the language of chess?</p>
 
-    <p>First, we must find a dataset that is representative of the kinds of text we wish the model to complete. Companies like OpenAI, Google and Meta have their own proprietary datasets, which are a mix of text from the internet, books, scientific articles, code, etc. These training datasets are in the order of trillions of tokens, which is the in the same order of magnitude as the text contained in all books ever published.</p>
+    <p><a href="https://en.wikipedia.org/wiki/Blindfold_chess">Blindfold chess</a> is a variant of chess where the players do not see the board. Someone reads out the moves to them, and they reply by announcing their own next move out loud.</p>
+    <p>This sounds exactly like the framing we want: moves in, moves out.</p>
 
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
-        <source src="/assets/videos/LLMPreTrainingProcess.mp4" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
+    <p>The most commonly used language to represent chess games is called Standard Algebraic Notation (SAN). For example, the Italian Game starts with the moves</p>
 
-    <p>The process for pre-training the LLM is as follows:</p>
-    <ol>
-        <li>Sample an example at random from the dataset</li>
-        <li>Pass the first N tokens of the example through the LLM</li>
-        <li>Increase the probability of the Nth+1 token</li>
-        <li>Repeat</li>
-    </ol>
+    <p class="san-line"><span class="san-group"><span class="san-num">1.</span> <span class="san-move">e4</span> <span class="san-move">e5</span></span> <span class="san-group"><span class="san-num">2.</span> <span class="san-move">Nf3</span> <span class="san-move">Nc6</span></span> <span class="san-group"><span class="san-num">3.</span> <span class="san-move">Bc4</span></span></p>
 
-    <p>This process takes an enormous amount of compute, in the form of thousands of GPU servers, working for months.</p>
+    <figure>
+        <img class="media board-media" src="/assets/img/italian_game.svg" alt="The Italian Game opening position"/>
+        <figcaption>The position after 1. e4 e5 2. Nf3 Nc6 3. Bc4, the Italian Game.</figcaption>
+    </figure>
 
-    <h2>Assistants, completing a different kind of text</h2>
-    <p>Once an LLM has been pretrained it is only capable of completing text. What would happen if you were to ask it to "Write a poem"? LLMs are pretrained on a vast amount of text data, you can imagine that the model has seen highschool english homeworks and reddit threads where the text "Write a poem" is followed by " about your first love", or " for a friend". So a pretrained LLM will respond with something along those lines.</p>
-
-    <p>If you want the LLM to actually write you a poem, further training is required. This is achieved through <strong>instruction fine-tuning</strong>.</p>
-
-    <p>Instruction fine-tuning frames the problem of instruction following into something that LLMs do understand, <em>text completion</em>.</p>
-
-    <p>The first step is to create a dataset of the kinds of instruction-response pairs you wish the LLM to be able to follow. For example:</p>
-
+    <p>And can be understood as follows:</p>
     <div class="table-wrapper">
-        <table>
+        <table class="san-table">
             <thead>
-                <tr>
-                    <th>Instruction</th>
-                    <th>Response</th>
-                </tr>
+                <tr><th class="san-num-col"></th><th>White</th><th>Black</th></tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>What is the capital of France?</td>
-                    <td>The capital of France is Paris.</td>
+                    <td class="san-num">1.</td>
+                    <td><span class="san-move">e4</span><span class="san-gloss"><span class="piece">&#9817;&#xFE0E;</span> pawn e2 &#8594; e4</span></td>
+                    <td><span class="san-move">e5</span><span class="san-gloss"><span class="piece">&#9823;&#xFE0E;</span> pawn e7 &#8594; e5</span></td>
                 </tr>
                 <tr>
-                    <td>What are the three primary colors?</td>
-                    <td>The three primary colors are red, blue, and yellow.</td>
+                    <td class="san-num">2.</td>
+                    <td><span class="san-move">Nf3</span><span class="san-gloss"><span class="piece">&#9816;&#xFE0E;</span> knight g1 &#8594; f3</span></td>
+                    <td><span class="san-move">Nc6</span><span class="san-gloss"><span class="piece">&#9822;&#xFE0E;</span> knight b8 &#8594; c6</span></td>
                 </tr>
                 <tr>
-                    <td>Write a short story in third person narration about a protagonist who has to make an important career decision.</td>
-                    <td>John was at a crossroads in his life. He had just graduated college and was now facing the big decision of what career...</td>
+                    <td class="san-num">3.</td>
+                    <td><span class="san-move">Bc4</span><span class="san-gloss"><span class="piece">&#9815;&#xFE0E;</span> bishop f1 &#8594; c4</span></td>
+                    <td></td>
                 </tr>
             </tbody>
         </table>
     </div>
 
-    <p>Then, the problem is framed in terms of text completion by modifying the dataset. Here we introduce two special tokens that demarcate the instruction and response part of the text. Text between two <span class="text-orange">&lt;USER&gt;</span> tokens is the instruction, and the text between <span class="text-blue">&lt;ASSISTANT&gt;</span> tokens is the expected response <span class="tooltip"><span class="footnote-ref">[3]</span><span class="tooltiptext">These are special tokens, and cannot be detokenized to text. The token ids for the text "&lt;USER&gt;" is not the same as the token id of the special token <span class="text-orange">&lt;USER&gt;</span></span></span>. The first example in the dataset would be re-rewitten as:</p>
+    <p>If you wish to explore SAN in detail you can go to this <a href="https://www.chess.com/terms/chess-notation">chess.com article</a>.</p>
 
-    <div class="code-block">
-        <pre><span class="text-orange">&lt;USER&gt;</span>What is the capital of France?<span class="text-orange">&lt;USER&gt;</span><span class="text-blue">&lt;ASSISTANT&gt;</span>The capital of France is Paris.<span class="text-blue">&lt;ASSISTANT&gt;</span></pre>
+    <h2 id="why-and-what">Why and what?</h2>
+    <blockquote class="pull-quote">
+        <p>&hellip;general methods that leverage computation are ultimately the most effective, and by a large margin.</p>
+        <cite>Richard Sutton, <span class="pull-quote-source">The Bitter Lesson</span>, 2019</cite>
+    </blockquote>
+
+    <p>This project takes that idea to an extreme. As far as I know, no one has trained a general model to play chess by learning from a massive corpus of human games, and that is exactly what this is: a single transformer trained on nearly 1.8 billion of them.</p>
+
+    <p>Predicting the next move in a game is the same problem an LLM solves predicting the next word, so I borrow the whole apparatus: a decoder-only transformer (the model family behind ChatGPT) trained with the recipe modern LLMs are built with. The model is given no board, no rules, no search, and no chess knowledge of any kind. It only ever sees a stream of moves and learns to continue it.</p>
+
+    <p>Everything else it has to infer: where every piece sits, whose turn it is, which moves are even legal, all reconstructed from the move stream alone. That is blindfold chess in the most literal sense. Like a human announcing moves with the board out of sight, the model has to hold the entire position in its head.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>The landscape: how others teach machines human chess</summary>
+        <div class="deep-dive-body">
+            <p>Plenty of others have taught machines human-like chess. They differ in how much chess is built into the architecture, whether they search at move time, whether they learn from a strong engine like Stockfish, and how much data they train on. On every one of those this project sits at the spare end.</p>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>System (year)</th>
+                            <th>Chess-specific architecture</th>
+                            <th>Search / engine teacher</th>
+                            <th>Training positions</th>
+                            <th>Params</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Maia (2020)</td>
+                            <td>8&times;8 board planes; AlphaZero-style CNN; last 12 plies fed in</td>
+                            <td>None</td>
+                            <td>&asymp;0.6B&#8202;<sup>1</sup></td>
+                            <td>10.3M (&times;9)</td>
+                        </tr>
+                        <tr>
+                            <td>Maia-2 (2024)</td>
+                            <td>Board planes; ResNet CNN + skill-aware attention</td>
+                            <td>None</td>
+                            <td>9.1B</td>
+                            <td>23.3M</td>
+                        </tr>
+                        <tr>
+                            <td>Maia-3 / Chessformer (2026)</td>
+                            <td>64 squares as tokens; geometric attention bias; policy + value heads</td>
+                            <td>None</td>
+                            <td>&asymp;0.5B&#8202;<sup>2</sup></td>
+                            <td>79M</td>
+                        </tr>
+                        <tr>
+                            <td>Grandmaster without search (2024)</td>
+                            <td>FEN snapshot tokenized; action-value classification head</td>
+                            <td>Stockfish teacher</td>
+                            <td>&asymp;0.53B&#8202;<sup>3</sup></td>
+                            <td>270M</td>
+                        </tr>
+                        <tr>
+                            <td>Allie (2024)</td>
+                            <td>Decoder-only LM over UCI move tokens; + value &amp; think-time heads</td>
+                            <td>MCTS search</td>
+                            <td>6.6B</td>
+                            <td>355M</td>
+                        </tr>
+                        <tr>
+                            <td><strong>This post</strong></td>
+                            <td><strong>None: vanilla decoder-only LM over move tokens; no board, no value head</strong></td>
+                            <td><strong>None</strong></td>
+                            <td><strong>122.9B</strong></td>
+                            <td><strong>91M</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="diagram-footnotes">
+                <p>Position = one board state trained on; one move token per ply for the move-stream LMs (Allie, this post).</p>
+                <ol>
+                    <li>Maia: &asymp;0.6B per model, one per rating bin (&times;9); 12M games/model &times; ~50 kept moves/game; model sees 409.6M (400k steps &times; 1024 batch).</li>
+                    <li>Maia-3: corpus size unpublished; &asymp;512M positions processed in training (1M steps &times; 512 effective batch), shown as a scale proxy.</li>
+                    <li>Grandmaster: 15.3B Stockfish action-value labels over &asymp;0.53B distinct positions.</li>
+                </ol>
+            </div>
+
+            <p><strong>Board-based human imitators: the Maia line.</strong> <a href="https://arxiv.org/abs/2006.01855">Maia</a> (McIlroy-Young et al., 2020) reframed the goal of chess AI from playing the best move to predicting the move a human of a given rating would actually play. It uses an AlphaZero-style convolutional network that reads the board as a stack of 8&times;8 planes (so the board, its geometry, and the legal moves are built in rather than learned), and it plays with no search. The catch is that "a given rating" meant nine separate models, one per 100-Elo band. <a href="https://arxiv.org/abs/2409.20553">Maia-2</a> (Tang et al., 2024) folded those into one network with a "skill-aware attention" module that conditions on both players' ratings, and <a href="https://arxiv.org/abs/2605.19091">Maia-3 / Chessformer</a> (Monroe et al., 2026) pushed the idea furthest: a transformer that still reads the board, now as 64 square-tokens with a learned geometric attention bias, and currently holds the human-move-match record (57.1% at 79M parameters). Chessformer's authors argue that move-stream models like the one in this post "simply reconstruct the board state at each token" instead of specialising to a skill level.</p>
+
+            <p><strong>The engine-distillation outlier.</strong> DeepMind's <a href="https://arxiv.org/abs/2402.04494">Grandmaster-Level Chess Without Search</a> (Ruoss et al., 2024) is the odd one out. It is also a searchless transformer, but it does not learn from humans at all: it reads a board (a tokenized FEN) and is trained to reproduce Stockfish 16's win probability for every legal move, on the order of 15 billion engine evaluations, with human games used only as a source of positions. The result plays at grandmaster strength (~2895 Lichess blitz Elo) without ever searching. It distills an engine rather than imitating people; its goal is strength, not human-likeness.</p>
+
+            <p><strong>The move-stream cousin: Allie.</strong> <a href="https://arxiv.org/abs/2410.03893">Allie</a> (Zhang et al., 2024) is the closest relative to this project: a decoder-only transformer over a stream of moves (in UCI notation), a language model of chess in the same sense ours is. It trains "exclusively from humans" (no engine distillation) and adds heads that predict how long a human would think and how the game will end. Its search-free policy scores 55.7% move-match, in the same range this project lands in. The headline difference is its "bit of search": a Monte-Carlo tree search whose budget scales with the model's own predicted human think-time. That search keeps Allie calibrated against very strong opponents; this project, with no search at all, gives that up.</p>
+
+            <p>Where the others add a board, a search, an engine teacher, or extra heads, this one adds only data. That is what makes it a <em>general</em> model in the sense above, rather than a chess-specific one.</p>
+        </div>
+    </details>
+
+    <h2 id="limitations">Hardware and compute</h2>
+    <p>This being a personal project, I do not have access to large computational resources. I have a personal computer with an Intel i5-13500 CPU, an NVIDIA RTX 4070 Ti Super (16 GB) GPU, 16 GB of RAM, and under 1 TB of available storage. This will impact several engineering choices made throughout the project. Late in the project I unexpectedly gained access to a single H100 GPU on Azure, but by then those choices had already been shaped by the hardware above.</p>
+
+    <h2 id="pretraining">Pre-training</h2>
+    <p>The goal of pre-training our chess autocomplete is to learn the <em>language of chess</em>, the rules of the game. We will measure the performance of a pre-trained model with two metrics:</p>
+    <ul>
+        <li><strong>Valid move probability mass</strong> (VPM): the sum of the probabilities assigned by the model of all legal moves in a position, averaged over all positions. In plain terms: what fraction of the model's confidence lands on moves that are actually legal. A model that has fully learned the rules would score 100%.</li>
+        <li><strong>Game-end prediction accuracy</strong> (GPA): measures the accuracy of the model when predicting how a game ended (checkmate, stalemate, draw by repetition, etc).</li>
+    </ul>
+
+    <p>These two metrics will give us a way to evaluate how well the model has learned the rules of chess. Our goal is to reach 100% VPM and 100% GPA.</p>
+
+    <p>We will also get a sense of the model's playing strength by playing it against the Stockfish chess engine at a range of strength levels. This is not an explicit optimization target: the goal of this project is not to build the highest-rated chess model, only to understand how well a model trained as pure autocomplete ends up playing. Those results, and the details of how strength is measured, come later in the <a href="#playing-strength">playing strength</a> section.</p>
+
+    <h3>The dataset</h3>
+    <p>The open-source online platform <a href="https://lichess.org/">lichess</a> publishes the games played on their platform as an <a href="https://database.lichess.org/">open database</a>. This database contains (as of May 2026) a total of <strong>7,863,012,346</strong> rated chess games, spanning over 13 years and featuring players from complete beginners to grandmasters. This database has a total compressed size of 2.49 TB.</p>
+
+    <figure>
+        <img class="media" src="/assets/img/lichess_rapid_distribution.png" alt="Lichess weekly rapid rating distribution"/>
+        <figcaption>The rating distribution of rapid games on lichess. The median player is rated about 1400.</figcaption>
+    </figure>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>From 7.8 billion games to a training set</summary>
+        <div class="deep-dive-body">
+            <p>The final model is not trained on all 7.8 billion games. It is trained on 21 monthly standard-rated files, from January 2024 through September 2025, with a few filters applied:</p>
+            <ul>
+                <li><strong>Standard chess only.</strong> Variants (Chess960, Antichess, and so on) are excluded; only standard rated games are downloaded.</li>
+                <li><strong>Main line, standard positions only.</strong> Games that start from a non-standard position, contain an illegal move, or branch into variations are skipped.</li>
+            </ul>
+            <p>The validation set is the most recent 10% of games from the newest file (September 2025); everything else is training data.</p>
+        </div>
+    </details>
+
+    <h3>Data processing</h3>
+    <p>The games in the lichess open database are stored as <code>zst</code> compressed PGN (portable game notation) files. A PGN file is a commonly used text format for storing both metadata and moves from one or more games of chess. Below is an example of the PGN of a chess game.</p>
+
+    <div class="code-block pgn">
+        <pre><code><span class="pgn-br">[</span><span class="pgn-key">Event</span> <span class="pgn-val">"Troll Masters"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">Site</span> <span class="pgn-val">"Gausdal NOR"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">Date</span> <span class="pgn-val">"2001.01.05"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">Round</span> <span class="pgn-val">"1"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">White</span> <span class="pgn-val">"Edvardsen,R"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">Black</span> <span class="pgn-val">"Carlsen,Magnus"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">Result</span> <span class="pgn-val">"1/2-1/2"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">WhiteElo</span> <span class="pgn-val">"2055"</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">BlackElo</span> <span class="pgn-val">""</span><span class="pgn-br">]</span>
+<span class="pgn-br">[</span><span class="pgn-key">ECO</span> <span class="pgn-val">"D12"</span><span class="pgn-br">]</span>
+
+<span class="pgn-num">1.</span>d4 Nf6 <span class="pgn-num">2.</span>Nf3 d5 <span class="pgn-num">3.</span>e3 Bf5 <span class="pgn-num">4.</span>c4 c6 <span class="pgn-num">5.</span>Nc3 e6 <span class="pgn-num">6.</span>Bd3 Bxd3 <span class="pgn-num">7.</span>Qxd3 Nbd7 <span class="pgn-num">8.</span>b3 Bd6
+<span class="pgn-num">9.</span>O-O O-O <span class="pgn-num">10.</span>Bb2 Qe7 <span class="pgn-num">11.</span>Rad1 Rad8 <span class="pgn-num">12.</span>Rfe1 dxc4 <span class="pgn-num">13.</span>bxc4 e5 <span class="pgn-num">14.</span>dxe5 Nxe5 <span class="pgn-num">15.</span>Nxe5 Bxe5
+<span class="pgn-num">16.</span>Qe2 Rxd1 <span class="pgn-num">17.</span>Rxd1 Rd8 <span class="pgn-num">18.</span>Rxd8+ Qxd8 <span class="pgn-num">19.</span>Qd1 Qxd1+ <span class="pgn-num">20.</span>Nxd1 Bxb2 <span class="pgn-num">21.</span>Nxb2 b5
+<span class="pgn-num">22.</span>f3 Kf8 <span class="pgn-num">23.</span>Kf2 Ke7  <span class="pgn-result">1/2-1/2</span></code></pre>
     </div>
 
-    <p>This is the new kind of text that the LLM must learn to complete. The LLM is trained in a similar fashion as during pre-training. To simply complete this new type of text we have created.</p>
+    <p>The moves in a PGN file are stored in SAN. SAN is convenient for chess players, but it is not the most convenient representation for this project, for reasons we get into when choosing the model's input representation.</p>
 
-    <video class="media" controls disablepictureinpicture loop autoplay muted controlslist="nodownload noremoteplayback noplaybackrate">
-        <source src="/assets/videos/LLMFinetuningProcess.mp4" type="video/mp4">
-        Your browser does not support the video tag.
-    </video>
+    <h4>Binary game representation</h4>
+    <p>So instead of storing games as SAN text, I designed a compact 16-bit binary format: every move fits in exactly two bytes, can be decoded on its own without replaying the game, and any game can be read straight out of the middle of a file. The full bit layout (and the two companion files that make individual games randomly addressable) are in the deep-dive below.</p>
 
-    <h2>Resolving ambiguity with human preferences</h2>
-    <p>The answer to the question <code>What is 4+4?</code> is relatively simple. However, other instructions can be more subjective, they can have multiple possible "correct" answers, how can the LLM choose which one to use?</p>
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>Dataset representation</summary>
+        <div class="deep-dive-body">
+            <p>To give a sense of scale: our complete training set, the 21 monthly lichess files from January 2024 through September 2025, is <strong>635 GB</strong> compressed and about <strong>4.2 TB</strong> uncompressed as PGN. In our binary representation it takes only <strong>292 GB</strong>, itself uncompressed and supporting O(1) random access to any game.</p>
+            <p>Encoding one PGN file produces a <em>triplet</em> of files that share a base name. For the September 2025 database that is:</p>
+            <ul>
+                <li><code>&hellip;2025-09.bin</code>: the moves of every game, back to back.</li>
+                <li><code>&hellip;2025-09-map.bin</code>: one byte offset per game, for random access.</li>
+                <li><code>&hellip;2025-09-metadata.parquet</code>: one row of metadata per game.</li>
+            </ul>
+            <p>The three files are aligned by row index: game <code>N</code> in the <code>.bin</code> is entry <code>N</code> in the map and row <code>N</code> in the parquet. The encoder buffers a whole game in memory and commits it to all three files only once it has parsed cleanly: a game with an illegal move or a non-standard starting position is dropped from all three at once, so they never drift apart.</p>
 
-    <div class="code-block">
-        <p>What is the capital of france?</p>
-        <ol type="a">
-            <li>Paris</li>
-            <li>The capital of France is Paris</li>
-            <li>The current capital of France is Paris, but historically...</li>
+            <h4>The moves: <code>.bin</code></h4>
+            <p>The move format was designed against these requirements:</p>
+            <ol>
+                <li>Contains all necessary information
+                    <ul>
+                        <li>Which piece was moved</li>
+                        <li>From which square</li>
+                        <li>To which square</li>
+                        <li>If it was a promotion, to which piece</li>
+                        <li>If it was a castling move, which one</li>
+                        <li>If the game ended, how</li>
+                    </ul>
+                </li>
+                <li>Can be quickly parsed without a board representation</li>
+                <li>Byte aligned</li>
+                <li>As space efficient as possible</li>
+                <li>Allow random access to games</li>
+                <li>No lookup tables</li>
+            </ol>
+
+            <p>The sixteen bits are laid out as five fields: a move type, then the from-square and to-square as file/rank pairs:</p>
+            <div class="bitfield" aria-label="16-bit move encoding layout">
+                <span class="seg seg-type"><span class="bits">0000</span><span class="seg-label">move type</span></span>
+                <span class="seg seg-from-file"><span class="bits">000</span><span class="seg-label">from file</span></span>
+                <span class="seg seg-from-rank"><span class="bits">000</span><span class="seg-label">from rank</span></span>
+                <span class="seg seg-to-file"><span class="bits">000</span><span class="seg-label">to file</span></span>
+                <span class="seg seg-to-rank"><span class="bits">000</span><span class="seg-label">to rank</span></span>
+            </div>
+            <div class="bitfield" aria-label="Example: the move e2 to e4">
+                <span class="seg seg-type"><span class="bits">0000</span><span class="seg-label">pawn</span></span>
+                <span class="seg seg-from-file"><span class="bits">100</span><span class="seg-label">e</span></span>
+                <span class="seg seg-from-rank"><span class="bits">001</span><span class="seg-label">2</span></span>
+                <span class="seg seg-to-file"><span class="bits">100</span><span class="seg-label">e</span></span>
+                <span class="seg seg-to-rank"><span class="bits">011</span><span class="seg-label">4</span></span>
+            </div>
+            <p class="diagram-caption">The 16-bit move layout, and the opening move e2&#8594;e4 encoded in it.</p>
+
+            <p>The first 4 bits encode the move type:</p>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Bits</th><th>Move type</th><th>Bits</th><th>Move type</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>0000</code></td><td>Pawn move</td><td><code>1000</code></td><td>Game end</td></tr>
+                        <tr><td><code>0001</code></td><td>Knight move</td><td><code>1001</code></td><td>Promotion to knight</td></tr>
+                        <tr><td><code>0010</code></td><td>Bishop move</td><td><code>1010</code></td><td>Promotion to bishop</td></tr>
+                        <tr><td><code>0011</code></td><td>Rook move</td><td><code>1011</code></td><td>Promotion to rook</td></tr>
+                        <tr><td><code>0100</code></td><td>Queen move</td><td><code>1100</code></td><td>Promotion to queen</td></tr>
+                        <tr><td><code>0101</code></td><td>King move</td><td><code>1101</code></td><td>Black king side castle</td></tr>
+                        <tr><td><code>0110</code></td><td>White king side castle</td><td><code>1110</code></td><td>Black queen side castle</td></tr>
+                        <tr><td><code>0111</code></td><td>White queen side castle</td><td><code>1111</code></td><td>Unused</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>The remaining 12 bits encode the from-square and to-square as two file/rank pairs of 3 bits each:</p>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Bits</th><th>File</th><th>Rank</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>000</code></td><td>a</td><td>1</td></tr>
+                        <tr><td><code>001</code></td><td>b</td><td>2</td></tr>
+                        <tr><td><code>010</code></td><td>c</td><td>3</td></tr>
+                        <tr><td><code>011</code></td><td>d</td><td>4</td></tr>
+                        <tr><td><code>100</code></td><td>e</td><td>5</td></tr>
+                        <tr><td><code>101</code></td><td>f</td><td>6</td></tr>
+                        <tr><td><code>110</code></td><td>g</td><td>7</td></tr>
+                        <tr><td><code>111</code></td><td>h</td><td>8</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>En passant needs no special move type: it is stored as an ordinary pawn capture. The 16 bits alone do not reveal that the captured pawn sits on a different square than the destination, but that is recoverable from the position, and nothing in the pipeline needs it.</p>
+
+            <p>And there are 6 "special" numbers representing game end states:</p>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Token</th><th>Value</th><th>Meaning</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>&lt;|unknown|&gt;</code></td><td><code>0x8000</code></td><td>Recorded moves run out before any real ending</td></tr>
+                        <tr><td><code>&lt;|checkmate|&gt;</code></td><td><code>0x8001</code></td><td>Checkmate</td></tr>
+                        <tr><td><code>&lt;|stalemate|&gt;</code></td><td><code>0x8002</code></td><td>Stalemate</td></tr>
+                        <tr><td><code>&lt;|insufficient_material|&gt;</code></td><td><code>0x8003</code></td><td>Insufficient material</td></tr>
+                        <tr><td><code>&lt;|fifty_move_rule|&gt;</code></td><td><code>0x8004</code></td><td>Fifty-move rule</td></tr>
+                        <tr><td><code>&lt;|threefold_repetition|&gt;</code></td><td><code>0x8005</code></td><td>Threefold repetition</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p>Each game is its move tokens followed by exactly one of these end tokens, and games are written one after another with no separator between them: the end token doubles as the boundary. Every token is two bytes, little-endian, so the file is exactly two bytes per token from start to finish. Every special token &mdash; the six endings and <code>&lt;|game_start|&gt;</code> &mdash; uses move-type <code>1000</code> (the <code>0x8</code> nibble), a code no real move occupies, so it can never collide with a move.</p>
+
+            <h4>Random access: <code>-map.bin</code></h4>
+            <p>Scanning for end tokens walks the file front to back, but jumping straight to game five million needs an index. The map file is a flat array of <code>uint64</code> little-endian byte offsets, one per game, each holding the <em>end</em> byte position of its game in the <code>.bin</code>. Game <code>0</code> starts at byte <code>0</code> and game <code>i</code> starts where game <code>i-1</code> ended, so two adjacent entries bracket any game in constant time. The training pipeline memory-maps both files and reads a game as a single slice.</p>
+
+            <h4>Who was playing: <code>-metadata.parquet</code></h4>
+            <p>The <code>.bin</code> deliberately holds only moves; everything <em>about</em> a game lives in a separate Snappy-compressed parquet file, one row per game in the same order. Keeping it apart leaves the moves a clean token stream, and lets anyone filter the dataset on metadata without touching the binary. The columns:</p>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Column</th><th>Type</th><th>Meaning</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><code>GameIndex</code></td><td><code>u64</code></td><td>1-based position of the game in the source PGN, counting games later skipped</td></tr>
+                        <tr><td><code>WhiteRating/16</code></td><td><code>u8</code></td><td>White Elo divided by 16</td></tr>
+                        <tr><td><code>BlackRating/16</code></td><td><code>u8</code></td><td>Black Elo divided by 16</td></tr>
+                        <tr><td><code>InitialTime</code></td><td><code>u16</code></td><td>Initial clock, in seconds</td></tr>
+                        <tr><td><code>Increment</code></td><td><code>u8</code></td><td>Increment per move, in seconds</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Ratings are divided by 16 so each fits in a single byte; the top value, 255, covers everyone rated 4080 and up. <code>GameIndex</code> counts the skipped games too, so any row traces back to its exact game in the original PGN. These are the raw ingredients: the rating buckets and time-control categories the model is later conditioned on are derived from these columns, not stored here.</p>
+        </div>
+    </details>
+
+    <p>The September 2025 lichess open database file has a total of <strong>87,049,890</strong> games, a compressed size of <strong>28.3 GB</strong>, and an uncompressed size of <strong>about 189 GB</strong>. Encoding it produces an <strong>11 GB</strong> <code>.bin</code>, a <strong>0.7 GB</strong> map, and a <strong>0.5 GB</strong> metadata file, about <strong>12.5 GB</strong> in total. This is about a 15x reduction from the uncompressed size, and 2x reduction from the compressed size.</p>
+
+    <h2 id="baseline">A baseline, we have to start somewhere</h2>
+    <p>My initial goal is to get a simple baseline to work from. I designed a simple transformer, a simple tokenization strategy and a simple training procedure.</p>
+
+    <h3>Choosing an input representation for the transformer</h3>
+    <p>The most obvious representation would be to use SAN directly: map every possible SAN move to its own token. I discarded this early, for two reasons.</p>
+
+    <p>First, SAN is not self-contained. A move like <code>Nxf4</code> tells you a knight captured on f4, but not which knight or from where; to recover that you have to replay the game on a board. I wanted a representation that makes the piece, the from-square and the to-square explicit, keeping our options open for the rest of the project.</p>
+
+    <p>Second, the same physical move can be written several different ways depending on what else is on the board, and if it gives check, a <code>+</code> is appended, adding yet another spelling like <code>Nxf4+</code>. Mapping SAN straight to tokens would force the model to learn a separate token for each spelling, although they all mean the same move:</p>
+
+    <figure class="san-ambiguity" aria-label="One physical move, three SAN spellings">
+        <div class="san-ambiguity-move">
+            <span class="token token-move"><span class="piece">&#9822;&#xFE0E;</span>d5&#8594;f4</span>
+            <span class="san-ambiguity-sub">one physical move (a capture)</span>
+        </div>
+        <span class="san-ambiguity-arrow" aria-hidden="true">&#8594;</span>
+        <ol class="san-ambiguity-list">
+            <li><span class="san-move">Nxf4</span><span class="san-gloss">only one knight can reach f4</span></li>
+            <li><span class="san-move">N5xf4</span><span class="san-gloss">a second knight on d3: same file, disambiguate by rank</span></li>
+            <li><span class="san-move">Ndxf4</span><span class="san-gloss">a second knight on h5: same rank, disambiguate by file</span></li>
         </ol>
-    </div>
+    </figure>
+    <p class="diagram-caption">The same physical move (a knight from d5 captures on f4) written three ways depending on what else is on the board. SAN encodes the destination, not the origin.</p>
 
-    <p>The solution is to generate answers that humans prefer! This is achieved by <strong>aligning the LLM with the preferences of humans</strong>, as defined by humans themselves.</p>
-    <p>The human preference dataset consists of examples with three components: one instruction and two possible responses.
-        Humans are then tasked with choosing which response they prefer. 
-        This is done for thousands or millions of examples, gathering a diverse dataset of preferences on different topics, tasks, and from different humans.
-    </p>
+    <p>For simplicity's sake I opted to start by using our 16-bit binary game representation, where each of the 2^16 possible moves represents its own token. This also comes with the added benefit of not needing a tokenizer, since the binary move representations <em>are</em> our tokens. We only need to add a <span class="token token-special token-inline">&lt;|game_start|&gt;</span> token.</p>
+
+    <p>A tokenized game ready to be processed by our model looks like:</p>
+
+    <div class="token-strip" aria-label="A tokenized game, the fool's mate">
+        <span class="token token-special">&lt;|game_start|&gt;</span>
+        <span class="token token-move"><span class="piece">&#9817;&#xFE0E;</span>f2&#8594;f3</span>
+        <span class="token token-move"><span class="piece">&#9823;&#xFE0E;</span>e7&#8594;e5</span>
+        <span class="token token-move"><span class="piece">&#9817;&#xFE0E;</span>g2&#8594;g4</span>
+        <span class="token token-move"><span class="piece">&#9819;&#xFE0E;</span>d8&#8594;h4</span>
+        <span class="token token-end">&lt;|checkmate|&gt;</span>
+    </div>
+    <p class="diagram-caption">The fastest possible loss, the fool's mate, as our model sees it.</p>
+
+    <p>An important detail is that the model never receives <span class="token token-end token-inline">&lt;|unknown|&gt;</span> as a target. This is because <span class="token token-end token-inline">&lt;|unknown|&gt;</span> can mean that a player resigned, a draw was agreed, a player timed out, etc. We do not want the model to predict any of these. Who wants a chess engine that resigns? This is a larger carve-out than it sounds: most online games end exactly these ways rather than by a rule-forced ending on the board, so game-end prediction accuracy only ever measures the rule-forced endings: checkmate, stalemate, and the draw rules.</p>
+
+    <h3>Model definition and training (v0)</h3>
+    <p>I opted to start with a simple decoder only transformer following the same architecture as <a href="https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf">GPT-2</a> with the same hyperparameters as the smallest GPT-2 model with some minor modifications. The model is trained on the first 64 half-moves (plies) of each game, for a total of 360k steps: 138 million games, 8.8 billion tokens, 36.7 hours of training.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>Model and training configuration</summary>
+        <div class="deep-dive-body">
+            <div class="spec-sheet">
+                <div class="spec-sheet-title">Model configuration</div>
+                <dl>
+                    <div class="spec-row"><dt>dimension</dt><dd>768</dd></div>
+                    <div class="spec-row"><dt>num heads</dt><dd>12</dd></div>
+                    <div class="spec-row"><dt>num blocks</dt><dd>12</dd></div>
+                    <div class="spec-row"><dt>positional encoding</dt><dd>RoPE</dd></div>
+                    <div class="spec-row"><dt>non-linearity</dt><dd>GELU</dd></div>
+                    <div class="spec-row"><dt>vocabulary size</dt><dd>2<sup>16</sup></dd></div>
+                </dl>
+            </div>
+
+            <div class="spec-sheet">
+                <div class="spec-sheet-title">Training configuration</div>
+                <dl>
+                    <div class="spec-row"><dt>max sequence length</dt><dd>64</dd></div>
+                    <div class="spec-row"><dt>batch size</dt><dd>384</dd></div>
+                    <div class="spec-row"><dt>optimizer</dt><dd>Adam</dd></div>
+                    <div class="spec-row"><dt>max learning rate</dt><dd>6e-4</dd></div>
+                </dl>
+            </div>
+
+            <p>The model is trained on a max sequence length of 64 (64 half moves) for a total of 360k steps (138.2 million games). The learning rate is kept at 6e-4 for the first 300k steps, and then decayed to zero over the next 60k steps following an <a href="https://arxiv.org/abs/2405.18392">inverse square root schedule</a>.</p>
+
+            <div class="stat-cards">
+                <div class="stat-card">
+                    <span class="stat-value">36.7h</span>
+                    <span class="stat-label">duration</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">138.2M</span>
+                    <span class="stat-label">games</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">8.847B</span>
+                    <span class="stat-label">tokens</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value">9.9&#215;10<sup>18</sup></span>
+                    <span class="stat-label">FLOPs</span>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <p>At the end of the 360k steps the model reached <strong>99.4%</strong> valid move probability mass and <strong>95.1%</strong> game-end prediction accuracy on the validation set:</p>
+
+    <figure>
+        <img class="media" src="/assets/img/baseline_vpm_gpa.png" alt="Baseline training curves for valid move probability mass and game end prediction accuracy"/>
+        <figcaption>The baseline learns most of the rules in the first 20k steps, then spends 340k more polishing the details.</figcaption>
+    </figure>
+
+    <p>Playing strength over 100 games per opponent, scored with Glicko, an Elo-like rating system:</p>
 
     <div class="table-wrapper">
         <table>
             <thead>
                 <tr>
-                    <th>Instruction</th>
-                    <th>Response 1</th>
-                    <th>Response 2</th>
+                    <th>Opponent</th>
+                    <th>Win</th>
+                    <th>Draw</th>
+                    <th>Loss</th>
+                    <th>Glicko rating</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>What is the capital of France?</td>
-                    <td>The capital of France is Paris.</td>
-                    <td>Paris</td>
+                    <td>Stockfish, 1347 rated</td>
+                    <td>61.0%</td>
+                    <td>9.7%</td>
+                    <td>29.3%</td>
+                    <td>1425</td>
                 </tr>
                 <tr>
-                    <td>What are the three primary colors?</td>
-                    <td>The three primary colors are red, blue, and yellow.</td>
-                    <td>Red, yellow, and blue (RYB).</td>
-                </tr>
-                <tr>
-                    <td>Write a short story in third person narration about a protagonist who has to make an important career decision.</td>
-                    <td>John was at a crossroads in his life. He had just graduated college and was now facing the big decision of what career...</td>
-                    <td>There was once a man. The man was called John. John was worried about whether he should stay at hes current job...</td>
+                    <td>Stockfish, 1566 rated</td>
+                    <td>37.1%</td>
+                    <td>11.8%</td>
+                    <td>51.1%</td>
+                    <td>1476</td>
                 </tr>
             </tbody>
         </table>
     </div>
+    <p class="diagram-caption">Stockfish at depth 5 with 150&#8211;178ms per move, 1 thread.</p>
 
-    <p></p>
+    <p>A rating around 1450. The language of chess has been learned, mostly. Now to improve on it.</p>
 
-    <p>The training procedure is fundamentally different from previous training steps: intead of training the model to correctly predict the next token, it is trained to correctly predict full responses.</p>
+    <h2 id="improving-baseline">Improving the baseline model</h2>
+    <p>The baseline gave us a working training pipeline and several places to improve it: some obvious flaws to fix, some choices I had only guessed at. Rather than trust intuition, I settled every one of them with an <strong>ablation sweep</strong>: change one thing, train a small model on a fixed compute budget, and keep only what beats the noise. Each improvement below carries the verdict the sweep returned; the full run-by-run story is in the deep dive at the end of the section.</p>
 
-    <ol>
-        <li>Sample an example at random from the dataset</li>
-        <li>Pass the instruction tokens of the example through the LLM</li>
-        <li>Increase the probability of every single token in the favoured response, in that order.</li>
-        <li>Decrease the probability of every single token in the disfavoured response, in that order.</li>
-        <li>Repeat</li>
-    </ol>
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>How the sweep was run</summary>
+        <div class="deep-dive-body">
+            <p>The sweep rests on one number: the noise floor. The baseline configuration was trained five times with different random seeds, and the seed-to-seed standard deviation of the validation loss came out at <strong>0.0038 nats</strong> (a nat is just the natural-log unit the loss is measured in). That sets the bar for what counts as a real change rather than luck.</p>
+            <ul>
+                <li><strong>One change at a time, equal compute.</strong> Every run gets the same budget of 7.93×10<sup>17</sup> FLOPs (floating-point operations, a hardware-independent measure of how much computation a run costs), about 1.5B tokens, roughly one hour on the Azure H100. This is the &ldquo;small&rdquo; budget.</li>
+                <li><strong>A two-sigma gate.</strong> A change is accepted only if it beats the baseline by more than two standard deviations, 0.0077 nats. Anything inside that band is noise, no matter how promising it looks.</li>
+                <li><strong>Survive scale.</strong> The best variants are re-run at 4× the compute with three seeds each, to check the win does not evaporate once the model trains longer. Several did not survive it.</li>
+            </ul>
+            <p>In total the sweep took <strong>47 training runs</strong> and about <strong>123B training tokens</strong>, almost exactly what the single final run would later consume on its own.</p>
+        </div>
+    </details>
 
-    <h2>The best autocomplete</h2>
-    <p>Once an LLM has gone through pre-training, instruction fine-tuning and alignment to human preferences we are left with a model that is capable of writing poems, solving math problems, writing code, and importantly, adhering to human preferences. However, it is important to keep in mind that the LLM still does exactly what it was trained to do: <strong>generate the next token</strong>.</p> -->
+    <h3>A vocabulary of impossible moves</h3>
+    <p>Our binary representation gives us 65,536 possible tokens, but the vast majority of them are moves that can never be played: a pawn moving from a1 to h8, a king jumping across the entire board, a rook moving diagonally. If we only keep the moves that can actually occur on a chess board we are left with <strong>4,135</strong> tokens. I call this the <em>realizable</em> vocabulary.</p>
+
+    <p>Switching the input embeddings and the output layer (two separate, untied matrices in this model) to the realizable vocabulary shrinks the model from 186M parameters to <strong>91M</strong>. Over half of the baseline model was spent embedding tokens that can never appear in a game.</p>
+
+    <p><strong>The sweep confirmed it.</strong> The realizable input was the best of every encoder tested, and moving the output layer to it cost nothing. Keeping the full 65,536-token output layer was the opposite of free: at equal compute those variants were about 0.06 nats worse and down on every metric we track.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>How 65,536 moves become 4,135</summary>
+        <div class="deep-dive-body">
+            <p>The realizable vocabulary is built by enumerating every move that is geometrically possible on an empty board, for every piece type and every square:</p>
+            <ul>
+                <li>Sliding pieces (queen, rook, bishop) along every ray out to the edge of the board.</li>
+                <li>King and knight moves from every square.</li>
+                <li>Pawn single pushes, double pushes, diagonal captures, and promotions, for both colors.</li>
+                <li>The four castling moves.</li>
+            </ul>
+            <p>That yields 4,128 distinct move tokens. Adding seven special tokens (game start, plus the six game-end markers) gives <strong>4,135</strong>. Each of the remaining ~61,000 of the 65,536 possible 16-bit words (a bishop moving like a rook, a pawn teleporting across the board) describes something that can never legally happen, so it never needs a token. The input side carries 19 more &mdash; the 16 rating buckets, two time controls, and a <code>&lt;|missing|&gt;</code> token &mdash; for <strong>4,154</strong> inputs in all; these are read but never predicted, so they never appear among the 4,135 outputs.</p>
+        </div>
+    </details>
+
+    <h3>Training on full games</h3>
+    <p>The baseline was trained on the first 64 half-moves of each game, so it never saw an endgame. Learning endgames means training on whole games, up to 200 half-moves, and since real games vary enormously in length, the pipeline has to handle variable-length sequences without wasting compute on padding. The approach I chose packs games of different lengths into a single padding-free stream, so every position the GPU touches is a real move (the mechanics are in the deep dive below). This change never entered the sweep: seeing whole games is a prerequisite for learning endgames at all, not a tuning knob to validate.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>How games of different lengths share a batch</summary>
+        <div class="deep-dive-body">
+            <p>The simplest way to put games of different lengths in one batch is to pick a fixed width and pad. Every game becomes a row of the same length; any game shorter than that width is filled out with a padding token, and the loss is told to ignore those positions. It trains correctly, but the padding still flows through every attention and feed-forward layer. The GPU does the work and then throws it away. At a width of 64 half-moves that overhead is tolerable. At 200 it is not: most games finish long before 200 half-moves, so a fixed-width batch would be mostly padding, and most of the compute would go to waste.</p>
+
+            <div class="pad-grid" aria-label="A fixed-width padded batch of three games">
+                <div class="pad-row">
+                    <span class="pad-rowlabel">game 1</span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                </div>
+                <div class="pad-row">
+                    <span class="pad-rowlabel">game 2</span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                </div>
+                <div class="pad-row">
+                    <span class="pad-rowlabel">game 3</span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-move"></span>
+                    <span class="pad-cell pad-pad">&empty;</span>
+                </div>
+            </div>
+            <p class="diagram-caption">Three games padded to a fixed width of eight. The dashed cells are padding: the GPU computes them, the loss ignores them. Here a third of the batch is wasted, and real game lengths vary far more than this.</p>
+
+            <p>So the batch dimension is dropped entirely. Instead of a rectangle of games, the games are concatenated into a single long stream, sized to a fixed token budget: every position in it is a real move, and there is nothing to pad. Because each step processes the same number of tokens, memory and step time stay flat from batch to batch. (The one game that would spill past the budget is cropped to fit, which costs about a hundred tokens per batch, a rounding error.)</p>
+
+            <p>This packing must be handled carefully: run attention naïvely over the stream and the transformer can attend across games, not good. Preventing it takes two pieces of bookkeeping. The first records where each game starts and ends, so attention can be confined to a block-diagonal pattern: every token attends only within its own game, never across a boundary. The second gives each token its position within its own game, resetting to zero at every boundary, so the rotary positional encoding numbers each game from its first move wherever it lands in the stream.</p>
+
+            <div class="packing" aria-label="The same three games packed into one stream">
+                <div class="pack-row">
+                    <span class="pack-cell"><span class="pack-tok pack-a"></span><span class="pack-idx">0</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-a"></span><span class="pack-idx">1</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-a"></span><span class="pack-idx">2</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-a"></span><span class="pack-idx">3</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-a"></span><span class="pack-idx">4</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-a"></span><span class="pack-idx">5</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-b"></span><span class="pack-idx">0</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-b"></span><span class="pack-idx">1</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-b"></span><span class="pack-idx">2</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">0</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">1</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">2</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">3</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">4</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">5</span></span>
+                    <span class="pack-cell"><span class="pack-tok pack-c"></span><span class="pack-idx">6</span></span>
+                </div>
+                <div class="pack-cuseqlens">cu_seqlens = [0, 6, 9, 16]</div>
+            </div>
+            <p class="diagram-caption">The same three games packed end to end into one stream of sixteen real tokens, colored by game. The number under each token is its position within its own game. Note it resets to zero at every boundary. <code>cu_seqlens</code> marks those boundaries so attention never crosses them.</p>
+
+            <p>In the above example, using padding we process 16 tokens of information but use 32 tokens of compute. Packing all games into one sequence allows us to use only 16 tokens of compute, a 100% increase in computation speed.</p>
+
+            <p>This packed attention is implemented in <a href="https://github.com/Dao-AILab/flash-attention">FlashAttention</a>'s variable-length kernel, <code>flash_attn_varlen_func</code>. The ordinary kernel expects a <code>(batch, seq_len, heads, dim)</code> rectangle; the varlen one expects the flat stream and is <em>told</em> the seams. Its parameters:</p>
+
+            <div class="code-block py">
+                <pre><code><span class="tok-fn">flash_attn_varlen_func</span>(
+    q, k, v,
+    cu_seqlens_q,
+    cu_seqlens_k,
+    max_seqlen_q,
+    max_seqlen_k,
+    <span class="tok-arg">causal</span>=<span class="tok-const">True</span>,
+)</code></pre>
+            </div>
+
+            <ul>
+                <li><strong><code>q</code>, <code>k</code>, <code>v</code></strong>: query, key and value for every token in the packed stream, shape <code>(total_tokens, n_heads, head_dim)</code>, no batch dimension.</li>
+                <li><strong><code>cu_seqlens_q</code>, <code>cu_seqlens_k</code></strong>: cumulative sequence lengths, the offsets <code>[0, 6, 9, 16]</code> from the diagram marking where each game begins and ends. Query side and key side are the same tensor, because a token's queries and the keys it may attend to live in the same game. These seams are what make attention block-diagonal.</li>
+                <li><strong><code>max_seqlen_q</code>, <code>max_seqlen_k</code></strong>: length of the longest game in the batch. The kernel needs an upper bound up front to size the work it launches; it changes how the work is tiled, not the result.</li>
+                <li><strong><code>causal=True</code></strong>: inside each game a move attends only to the moves before it. Together with <code>cu_seqlens</code>, every token sees exactly its own game's past and nothing else.</li>
+            </ul>
+        </div>
+    </details>
+
+    <h3>Telling the model who is playing</h3>
+    <p>A game between two 800 rated players looks very different from a game between two grandmasters, and the same player plays very differently in bullet than in classical. Our model sees none of this, it only sees moves.</p>
+
+    <p>The PGN headers already contain the ratings of both players and the time control, so we can give them to the model. Three <strong>metadata tokens</strong> are prepended to every game: the time control, the white player's rating, and the black player's rating.</p>
+
+    <div class="token-strip" aria-label="A tokenized game with metadata tokens">
+        <span class="token token-meta">&lt;|rapid|&gt;</span>
+        <span class="token token-meta">&lt;|white:2500|&gt;</span>
+        <span class="token token-meta">&lt;|black:2500|&gt;</span>
+        <span class="token token-special">&lt;|game_start|&gt;</span>
+        <span class="token token-move"><span class="piece">&#9817;&#xFE0E;</span>e2&#8594;e4</span>
+        <span class="token token-move"><span class="piece">&#9823;&#xFE0E;</span>e7&#8594;e5</span>
+        <span class="token-ellipsis">&#8230;</span>
+        <span class="token token-end">&lt;|checkmate|&gt;</span>
+    </div>
+
+    <p>There is a catch: at inference time we may not know these values. To handle this, each metadata token is randomly replaced with a special <span class="token token-meta token-inline">&lt;|missing|&gt;</span> token 30% of the time during training. The model learns to use the metadata when it is available, and to fall back to a sensible average when it is not.</p>
+
+    <p><strong>The sweep settled the dropout.</strong> Metadata is a real win: with it the model beats the no-metadata baseline well past the noise gate, by about 0.017 nats, and the win held up at 4× compute. But the variant trained with <em>no</em> dropout leans on the metadata so hard that, asked to play blind, it falls apart, scoring far worse than a model that never had metadata at all. The 30% dropout fixes that: blind, it sits right on the no-metadata baseline; informed, it keeps almost the entire win. We get the upside for free.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>How the metadata tokens are built</summary>
+        <div class="deep-dive-body">
+            <p>Ratings are not stored exactly. Each one is rounded into one of 16 buckets, 100 points wide, from 1000 to 2500; anything below 1000 lands in the bottom bucket and anything above 2500 in the top one. A 2480 and a 2530 player both become the same <code>2500</code> token.</p>
+            <p>The three tokens are always written in the order time control, white rating, black rating, immediately before <span class="token token-special token-inline">&lt;|game_start|&gt;</span>. The time control is one of two values, blitz or rapid, the only two kept in the data.</p>
+            <p>During training, each of the three tokens is independently swapped for a <span class="token token-meta token-inline">&lt;|missing|&gt;</span> token 30% of the time. That is why the model still plays when you tell it nothing: it has seen plenty of games where the rating or time control was absent. The metadata positions are never used as prediction targets: the model reads them, it never has to generate them.</p>
+        </div>
+    </details>
+
+    <h3>A better optimizer</h3>
+    <p>The baseline used AdamW for every parameter. The biggest single win of the whole sweep came from replacing it on the transformer-block weights with the <a href="https://kellerjordan.github.io/posts/muon/">Muon optimizer</a> (the optimizer being the algorithm that turns each batch's gradients into an actual weight update) while AdamW keeps the embeddings, the output layer and the norms.</p>
+
+    <p>The first attempt was a disaster: reusing AdamW's learning rate of 6e-4 for Muon made the model dramatically worse, about 0.18 nats below baseline. Muon wants its own learning rate, more than 10× higher. Unsurprising in hindsight, since Muon orthogonalizes its updates, so its learning rate lives on a different scale. After a proper sweep the best value was <strong>9.5e-3</strong>, the largest single improvement in the project. With Muon carrying the block weights, AdamW's learning rate for the remaining parameters was swept again and also preferred to be higher, landing at <strong>1.9e-3</strong>.</p>
+
+    <figure>
+        <img class="media" src="/assets/img/muon_lr_sweep.png" alt="Muon learning rate sweep, U-shaped curve with minimum at 9.5e-3"/>
+        <figcaption>The Muon learning rate sweep. AdamW's 6e-4 sits far up the left slope; the sweet spot is more than 10× higher, and the whole valley from roughly 5e-3 to 2e-2 is good.</figcaption>
+    </figure>
+
+    <h3>What didn't change the model</h3>
+    <p>Most of the architecture knobs turned out not to matter. A deeper, thinner model was clearly worse; a wider, shallower one and a version with more attention heads looked like ties at the small budget and lost outright when re-run at 4× compute, along with a higher AdamW learning rate I would otherwise have happily shipped. RMSNorm landed within noise of LayerNorm, so it stays. Two parts of the final recipe rode in <em>without</em> an ablation win: <strong>SwiGLU</strong> (a now-standard variant of the transformer's feed-forward layer, adopted on convention because it is what modern LLMs use) and the <strong>learning-rate schedule</strong>, a constant rate with an inverse-square-root warmdown, carried over unchanged from the <a href="https://arxiv.org/abs/2405.18392">paper it comes from</a> rather than tuned here. And weight decay bought nothing at this scale, so the recipe inherited <em>none</em>, a choice that caused problems at full scale.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>The sweep, phase by phase</summary>
+        <div class="deep-dive-body">
+            <p>Every phase below changes one thing against the same baseline and is judged against the same gate: beat the baseline by more than 0.0077 nats (two standard deviations) to count, then get re-run at 4× compute to prove the win survives. The phases ran in roughly this order, each locking its winner before the next began.</p>
+
+            <p><strong>Tokenizer and representation.</strong> The first question was how to encode a move. Feeding the model realizable tokens on the input was the best encoder of everything tested (1.531 nats vs the 1.537 baseline) and, as a bonus, dropped the ~50M-parameter input embedding for free. The decisive result was on the output side: keeping the full 65,536-token output layer was catastrophic, around +0.06 nats worse at equal compute and down on every auxiliary metric.</p>
+
+            <p><strong>Metadata tokens.</strong> Prepending the ratings and time control is a clear win when the model is told them (about −0.017 nats) but the interesting question was what happens when it is not. A model trained with no dropout on the metadata learns to lean on it so hard that, asked to play blind, it falls apart: +0.23 nats worse than its own informed score, well below even a model that never saw metadata. Training with 30% dropout removes the dependence: blind, it sits right on the no-metadata baseline; informed, it keeps almost the whole win. That is the variant in the recipe.</p>
+
+            <p><strong>Optimizer sanity check.</strong> Before tuning anything exotic, I checked the optimizer settings inherited from <a href="https://github.com/KellerJordan/modded-nanogpt">modded-nanogpt</a>: the AdamW betas, and weight decay. Nothing beat the gate. Notably, adding the standard weight decay of 0.1 was a no-op at this scale (it bought nothing), so the recipe kept weight decay at zero. That looked safe here. It was not safe at 20× the compute.</p>
+
+            <p><strong>Model shape.</strong> Holding the parameter count roughly fixed, I tried trading width for depth. A deeper, thinner model (576-wide, 21 blocks) was clearly worse, +0.019 nats. A wider, shallower one (1024-wide, 7 blocks) and a version with twice the attention heads were both statistical ties, and the wider one trained about 20% faster, which made it tempting. It was promoted to the 4× round, where the tie broke against it.</p>
+
+            <p><strong>Learning rate, before Muon.</strong> Sweeping AdamW's learning rate a half-decade each way around the inherited 6e-4 showed 6e-4 was conservative: 1e-3 won by −0.014 nats at the small budget. Going the other way fell off a cliff: 3e-4 and below collapsed entirely. So 1e-3 was promoted to the 4× round. Like the wide-shallow shape, it then failed to hold up.</p>
+
+            <p><strong>Normalization and the MLP.</strong> RMSNorm, the now-common alternative to LayerNorm, was run at 4× compute and landed +0.0015 nats from LayerNorm, inside the noise band, on the wrong side of zero. SwiGLU is one of two honest asterisks in the recipe: its ablation was staged but never actually run, so it is in the model purely on convention with modern LLMs, not on a measured win here. The other is the <strong>learning-rate schedule</strong>: the constant-then-inverse-sqrt warmdown was carried over unchanged from the <a href="https://arxiv.org/abs/2405.18392">paper it comes from</a> and never ablated.</p>
+
+            <p><strong>Muon, and the learning rate that nearly hid it.</strong> The largest result in the sweep was switching the transformer-block weights to Muon. The first run buried it: handed AdamW's 6e-4, Muon came out +0.18 nats <em>worse</em> than baseline, and a naïve reading would have thrown the optimizer out. Sweeping its learning rate across a log grid told the real story: Muon wants roughly 10–15× AdamW's rate, with a broad good valley from about 5e-3 to 2e-2 and a hard divergence cliff past it (5.3e-2 blew up entirely). The best point, 9.5e-3, beat the baseline by −0.036 nats, by far the biggest single win. Best-case Muon also beat best-case plain AdamW by another −0.022.</p>
+
+            <p><strong>AdamW's rate, with Muon locked in.</strong> With Muon carrying the block weights, the remaining AdamW parameters (embeddings, output layer, norms) got their own learning-rate sweep. It improved monotonically up to 1.9e-3 with no cliff in the tested range, so that is the value used, though the gain over the previous setting is inside the noise gate: the best observed point rather than a proven optimum.</p>
+
+            <p><strong>Surviving 4× compute.</strong> The whole point of the final round was to keep the small-budget winners honest. Two of them did not make it: the wider-shallower shape and the higher AdamW learning rate both shed their edge once the models trained four times as long, ending up clearly behind the plain choice. The realizable tokenizer, the original shape, and the metadata-with-dropout win all held (metadata stayed about −0.015 nats ahead at scale, and free in the worst case) and those are what went into the final recipe.</p>
+        </div>
+    </details>
+
+    <h2 id="final-model">The final model</h2>
+    <p>With the ablation sweep finished, every choice is settled. The final recipe:</p>
+
+    <div class="spec-sheet">
+        <div class="spec-sheet-title">The final recipe</div>
+        <dl>
+            <div class="spec-row"><dt>dimension</dt><dd>768</dd></div>
+            <div class="spec-row"><dt>num blocks</dt><dd>12</dd></div>
+            <div class="spec-row"><dt>num heads</dt><dd>12</dd></div>
+            <div class="spec-row"><dt>normalization</dt><dd>LayerNorm</dd></div>
+            <div class="spec-row"><dt>non-linearity</dt><dd>SwiGLU</dd></div>
+            <div class="spec-row"><dt>parameters</dt><dd>91M</dd></div>
+            <div class="spec-row"><dt>input vocab</dt><dd>4,154</dd></div>
+            <div class="spec-row"><dt>output vocab</dt><dd>4,135</dd></div>
+            <div class="spec-row"><dt>metadata tokens</dt><dd>19</dd></div>
+            <div class="spec-row"><dt>metadata dropout</dt><dd>30%</dd></div>
+            <div class="spec-row"><dt>Muon lr (blocks)</dt><dd>9.5e-3</dd></div>
+            <div class="spec-row"><dt>AdamW lr (rest)</dt><dd>1.9e-3</dd></div>
+        </dl>
+    </div>
+
+    <p>The final training run takes this recipe to the full training set: 600,000 steps, about <strong>123B tokens</strong> of chess games (600,000 steps &times; 1,024 sequences &times; 200 half-moves), a single near-complete pass in which almost every game is seen exactly once. It did not go cleanly the first time (the first attempt <a href="#final-run">exploded past step 160,000</a> and had to be restarted with a small amount of weight decay added) but the rerun trained cleanly all the way through, three and a half days on the H100. The result is <strong>chess-autocomplete-v1</strong>, the model you can play against at the top of this page.</p>
+
+    <div class="spec-sheet">
+        <div class="spec-sheet-title">Training configuration</div>
+        <dl>
+            <div class="spec-row"><dt>max sequence length</dt><dd>200</dd></div>
+            <div class="spec-row"><dt>batch size</dt><dd>1,024 (512 microbatch &times; 2 accumulation)</dd></div>
+            <div class="spec-row"><dt>steps</dt><dd>600,000</dd></div>
+            <div class="spec-row"><dt>weight decay</dt><dd>0.01 Muon / 0.005 AdamW</dd></div>
+            <div class="spec-row"><dt>schedule</dt><dd>constant, then inverse-sqrt warmdown over the last 120k steps</dd></div>
+        </dl>
+    </div>
+
+    <div class="stat-cards">
+        <div class="stat-card">
+            <span class="stat-value">85.2h</span>
+            <span class="stat-label">duration</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">1.76B</span>
+            <span class="stat-label">games</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">122.9B</span>
+            <span class="stat-label">tokens</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">6.7&#215;10<sup>19</sup></span>
+            <span class="stat-label">FLOPs</span>
+        </div>
+    </div>
+
+    <details class="deep-dive" id="final-run">
+        <summary><span class="deep-dive-tag">Deep dive</span>The final run</summary>
+        <div class="deep-dive-body">
+            <p>The recipe that came out of the sweep carried no weight decay, and the first attempt at the final run did not survive that. At step 160k everything was healthy: validation loss falling, valid move probability mass at 100%, gradient norms (the overall size of each update step) around 0.08. At step 165k the gradient norm spiked to 55. By step 172k it had reached 10<sup>8</sup>. The validation loss climbed to 23.8, and the valid move probability mass collapsed to 1.8%.</p>
+
+            <figure>
+                <img class="media" src="/assets/img/final_run_explosion.png" alt="Validation loss and gradient norm of the exploded run vs the final run"/>
+                <figcaption>The first attempt explodes at step 165k. The rerun with weight decay trains cleanly to 600k steps.</figcaption>
+            </figure>
+
+            <p>I first tried to rescue the run. Restarting from a healthy checkpoint with lower learning rates looked promising for a few thousand steps, but every variant either diverged again or showed the same upward bend in the loss. Whatever this was, lowering the learning rate only delayed it.</p>
+
+            <p>Digging through the checkpoints revealed something surprising: the failure was extremely localized. In plain terms, one tiny part of the network started growing without limit and dragged everything else down with it. Specifically, a single channel in the LayerNorm before the attention of block 1 grew from 0.16 to 6.3 between steps 150k and 200k while its paired bias swung to -6.0, and the Muon updates to that block's attention projections concentrated on that same channel. One normalization channel and a handful of weight columns had entered a feedback loop, and they took the rest of the model down with them.</p>
+
+            <p>The recipe had inherited one more choice from modded-nanogpt that I never questioned: <strong>no weight decay</strong>. Nothing in the training was pushing back against a weight that only wants to grow. The fix was to add a small amount of weight decay (0.005 for AdamW, 0.01 for Muon), a gentle force that shrinks every weight toward zero on each step, so nothing can grow unchecked, with values inspired by the NanoGPT speedrun community, and restart from scratch. As insurance I also launched a plain-AdamW fallback run alongside it, which was abandoned at 288k steps once the weight-decay run proved healthy.</p>
+        </div>
+    </details>
+
+    <h2 id="results">So, can autocomplete play chess blindfolded?</h2>
+    <p>Two questions close out the project. The local one first: did the model hit the targets <em>we</em> set? We named two: 100% valid move probability mass, and 100% game-end prediction accuracy. Everything in this section is measured on held-out human games the model never saw during training.</p>
+
+    <div class="stat-cards">
+        <div class="stat-card">
+            <span class="stat-value">99.6%</span>
+            <span class="stat-label">Valid probability mass</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">99.4%</span>
+            <span class="stat-label">Game end accuracy</span>
+        </div>
+    </div>
+
+    <p>Not 100%, but close. The 99.4% measures whether the model predicts the correct <em>reason</em> a game ends; a separate question is how often it declares a game over when it is not: only about 0.02% of the time (the exact counts are in the deep dive below). And it stays legal well outside its training data: on positions reached by random legal moves (positions no human would ever play into) its most likely move is still legal 99.8% of the time, and 99.4% even when the side to move is in check.</p>
+
+    <p>Staying legal in positions no human would ever play into cannot come from replaying memorized games: there are none to replay. To know its move is legal, the model has to reconstruct the board from the move stream and read the position off it, which is exactly the feat a human blindfold player performs. The model plays blindfolded and almost never tries to break the rules. Close enough to a yes for me.</p>
+
+    <p>Those three numbers sit on top of a much larger held-out eval, built so every level of play counts equally rather than mirroring Lichess, which is mostly blitz clustered around the 1400 median. The model is conditioned on 16 rating buckets a side (100 wide, 1000&ndash;2500), which gives 16&#215;16 = <strong>256</strong> white-vs-black rating pairings. We pull the same <strong>1,000 games</strong> for each pairing in each of two time controls: 256&#215;2 = <strong>512</strong> cells, <strong>512,000 games</strong>, and about <strong>30.5 million</strong> move predictions, weak, average and strong play represented in equal measure.</p>
+
+    <!-- source: eval-suite-20260525T115018Z / stratified_human, allie_benchmark -->
+    <p>Every game can be scored two ways: <strong>told who's playing</strong> (the model is given the real ratings and time control) or <strong>playing blind</strong>, with every metadata token replaced by <span class="token token-meta token-inline">&lt;|missing|&gt;</span>.</p>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th>Held-out metric (30.5M move targets)</th><th>Told who's playing</th><th>Blind</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Cross-entropy loss (nats)</td><td>1.336</td><td>1.365</td></tr>
+                <tr><td>Perplexity</td><td>3.80</td><td>3.92</td></tr>
+                <tr><td>Valid move probability mass</td><td>99.62%</td><td>99.61%</td></tr>
+                <tr><td>Top-1 move = the human's</td><td>57.83%</td><td>57.14%</td></tr>
+                <tr><td>Game-end prediction accuracy</td><td>99.41%</td><td>99.40%</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="diagram-caption">Every metric on the held-out human set, told the real metadata versus playing blind. Cross-entropy and perplexity are lower-is-better; the other three, higher.</p>
+    <p>Legality holds up even in positions no human would reach. The fraction of positions where the single most likely move is legal:</p>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th>Position set</th><th>Top-1 move is legal</th><th>Positions</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Lichess games</td><td>99.98%</td><td>884,049</td></tr>
+                <tr><td>Lichess, side to move in check</td><td>99.93%</td><td>63,844</td></tr>
+                <tr><td>Random legal-move positions</td><td>99.83%</td><td>377,956</td></tr>
+                <tr><td>Random, side to move in check</td><td>99.42%</td><td>20,592</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="diagram-caption">The model rarely proposes an illegal move even in positions no human would reach, and even when in check, the hardest case for staying legal.</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>Where the game-end predictions fail</summary>
+        <div class="deep-dive-body">
+            <!-- source: eval-suite-20260525T115018Z / game_end_failures -->
+            <p>Game-end accuracy is one number hiding very different difficulty. The model is near-perfect on the sharp, on-the-board endings and weak on the rare endings that need counting moves far back:</p>
+            <div class="bar-chart" aria-label="Game-end prediction accuracy by ending type">
+                <div class="bar-row"><span class="bar-label">Checkmate</span><div class="bar-track"><div class="bar-fill bar-good" style="width:99.99%"></div></div><span class="bar-value">99.99%</span></div>
+                <div class="bar-row"><span class="bar-label">Insufficient material</span><div class="bar-track"><div class="bar-fill bar-good" style="width:99.85%"></div></div><span class="bar-value">99.85%</span></div>
+                <div class="bar-row"><span class="bar-label">Stalemate</span><div class="bar-track"><div class="bar-fill bar-good" style="width:99.72%"></div></div><span class="bar-value">99.72%</span></div>
+                <div class="bar-row"><span class="bar-label">Threefold repetition</span><div class="bar-track"><div class="bar-fill" style="width:84.22%"></div></div><span class="bar-value">84.22%</span></div>
+                <div class="bar-row"><span class="bar-label">Fifty-move rule</span><div class="bar-track"><div class="bar-fill bar-warn" style="width:40.15%"></div></div><span class="bar-value">40.15%</span></div>
+            </div>
+            <p class="diagram-caption">Accuracy at predicting each ending, told who's playing. Checkmate is read off the board; the fifty-move rule needs a counter the model never sees, and it shows.</p>
+            <p>Two error types matter here, and they live in different places. A <em>false alarm</em> (calling a live game over) is the one you most want to avoid, and it is vanishingly rare: across all <strong>26,556,502</strong> move predictions in the two scorings (told who's playing and blind) the model did this only <strong>5,581</strong> times, about <strong>0.02%</strong>. The <strong>2,775</strong> from the told-who's-playing run alone are broken out below. The other error (<em>missing</em> a real ending and playing on) is what the 99.4% game-end accuracy is really measuring, and those misses are almost all on the two endings that require counting moves back through the game.</p>
+            <p>Broken out across the 200,169 real terminal positions and 13.3M ongoing ones in the told-who's-playing run:</p>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Failure mode</th><th>Count</th><th>Rate</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Real ending missed, played a move instead</td><td>962</td><td>0.48%</td></tr>
+                        <tr><td>Real ending not even in the model's top 5</td><td>154</td><td>0.08%</td></tr>
+                        <tr><td>Right that it ended, wrong reason</td><td>7</td><td>0.004%</td></tr>
+                        <tr><td>False alarm (declared a live game over)</td><td>2,775</td><td>0.02%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="diagram-caption">Almost every miss is a threefold-repetition or fifty-move ending, the two that require counting back through the game rather than reading the board in front of it.</p>
+        </div>
+    </details>
+
+    <h3 id="metadata-value">The value of Elo and time control information</h3>
+    <p>The metadata tokens were meant to let the model adapt to the players in front of it. Do they actually do anything? The clean test holds the position fixed and compares the model <em>told the real ratings</em> against the same model <em>playing blind</em>. Telling it is worth about <strong>0.7 points</strong> of human-move match and <strong>0.029 nats</strong> of loss overall, but that average buries the real finding. The gain is smallest when both players sit near the 1400 median, where the model already guesses the typical continuation, and largest when the players are far from average:</p>
+
+    <figure>
+        <div class="eval-heatmap-wrap">
+<table class="eval-heatmap elo-heatmap">
+  <thead>
+    <tr>
+      <th class="eh-corner">White&nbsp;rating&nbsp;&darr;<br>Black&nbsp;rating&nbsp;&rarr;</th><th>1000–1300</th><th>1400–1700</th><th>1800–2100</th><th>2200–2500</th></tr>
+  </thead>
+  <tbody><tr><th class="eh-rowlabel">1000–1300</th><td class="hm-s1">+0.65</td><td class="hm-s1">+0.60</td><td class="hm-s3">+1.06</td><td class="hm-s5">+1.88</td></tr><tr><th class="eh-rowlabel">1400–1700</th><td class="hm-s1">+0.51</td><td class="hm-s0">+0.20</td><td class="hm-s0">+0.43</td><td class="hm-s2">+1.01</td></tr><tr><th class="eh-rowlabel">1800–2100</th><td class="hm-s2">+0.79</td><td class="hm-s0">+0.25</td><td class="hm-s0">+0.25</td><td class="hm-s1">+0.59</td></tr><tr><th class="eh-rowlabel">2200–2500</th><td class="hm-s4">+1.45</td><td class="hm-s2">+0.85</td><td class="hm-s1">+0.58</td><td class="hm-s1">+0.75</td></tr></tbody>
+</table>
+</div>
+
+        <div class="hm-legend"><span>smaller gain</span><span class="hm-swatches"><span class="hm-s0"></span><span class="hm-s1"></span><span class="hm-s2"></span><span class="hm-s3"></span><span class="hm-s4"></span><span class="hm-s5"></span></span><span>larger gain</span></div>
+        <figcaption>Extra human-move match (percentage points) from telling the model the real ratings, versus playing blind, grouped by the two players' ratings. It helps least when both are average (+0.2) and most when a weak player faces a strong one (+1.9), the pairing the model would never guess blind.</figcaption>
+    </figure>
+
+    <p>The pattern shows the model acts on the rating tokens rather than ignoring them. Between two average players there is little to add: the blind guess is already the common move. Tell it instead that a 1000-rated player is facing a 2400, and it shifts toward moves it would otherwise never reach, a pairing nothing in its blind prior accounts for.</p>
+
+    <p>The coarse 4&#215;4 heatmap above bins a finer 16&#215;16 grid. The full version is in the <a href="#appendix-rating-grids">appendix</a>: the metadata gain (<a href="#fig-a1">A1</a>), raw move-match (<a href="#fig-a2">A2</a>), and loss (<a href="#fig-a3">A3</a>), cell by cell.</p>
+
+    <h3 id="playing-strength">Playing strength</h3>
+
+    <details class="deep-dive" id="how-strength">
+        <summary><span class="deep-dive-tag">Deep dive</span>How playing strength is measured</summary>
+        <div class="deep-dive-body">
+            <p>The model plays against Stockfish at a range of Elo levels, and a relative rating is calculated from the results. Each game is played up to the maximum sequence length the model is trained with, and Stockfish at full strength is used to evaluate the win/draw/loss (WDL) probability of the final position. If a game ends before the maximum sequence length is reached it is marked as having a WDL probability of 100% to whichever case was encountered. The reported WDL is the average over all games.</p>
+            <p>Each game is seeded with an opening rather than started from the empty board. Without that, a greedy model against fixed Stockfish settings would replay nearly the same game every time. The openings are drawn from the training data itself: the <strong>32 most common</strong> lines and the <strong>32 rarest</strong>, 64 in total. Every opening is played twice in each configuration, once with the model as white and once as black, 64 openings &times; 2 colors is where the <strong>128 games per cell</strong> reported below come from.</p>
+            <p>The rating itself is computed with <a href="http://www.glicko.net/glicko/glicko.pdf">Glicko</a> rather than plain Elo. Each Stockfish opponent is pinned at its known rating (a tiny rating deviation), the model starts at 1500 with a wide deviation, and its rating is nudged up or down game by game from the win/draw/loss results. Glicko's advantage over Elo is that it also tracks a <em>rating deviation</em> (how uncertain the estimate still is) which matters when you are inferring a rating from a finite number of games against a handful of fixed opponents.</p>
+            <p>The five opponents in the final 20,480-game evaluation are not one Stockfish run at different depths. Each level is a distinct configuration, a search-depth cap plus a time budget per move, and the Elo shown is the nominal rating attached to that configuration:</p>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Level</th><th>Pinned Elo</th><th>Depth cap</th><th>Time / move</th><th>Threads</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>0</td><td>1347</td><td>5</td><td>150 ms</td><td>1</td></tr>
+                        <tr><td>3</td><td>1729</td><td>5</td><td>200 ms</td><td>1</td></tr>
+                        <tr><td>7</td><td>2518</td><td>5</td><td>300 ms</td><td>1</td></tr>
+                        <tr><td>11</td><td>2851</td><td>8</td><td>400 ms</td><td>1</td></tr>
+                        <tr><td>16</td><td>3099</td><td>12</td><td>500 ms</td><td>1</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>The model itself plays greedily during evaluation (it always takes its single most likely legal move, no sampling). Games that reach the 200-half-move cap are adjudicated by full-strength Stockfish, with a position counted as decisive once the evaluation passes <strong>200 centipawns</strong>. The depth caps and per-move times come from lichess's fishnet client, and the Elo labels are Stockfish's own published skill-level ratings, interpolated to each level. Those Elo figures are labels for the configurations rather than a calibrated human scale, so a rating read off this ladder should be read as "relative to this ladder," not as a Lichess or FIDE number.</p>
+        </div>
+    </details>
+
+    <p>To measure strength the model played 20,480 games against Stockfish at five capped levels across openings and time controls, with long games adjudicated by a full-strength Stockfish. The model plays <strong>greedily: its single most likely legal move, no search</strong>. It is conditioned on a time control too, so every figure here is one of the two; this one is <strong>rapid</strong>. Conditioned on a 2400 rating, the top of our grid, it scores:</p>
+
+    <figure>
+        <div class="bar-chart strength-chart" aria-label="Model score against five Stockfish levels in rapid games, conditioned on a 2400 rating">
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;1347</span>
+                <div class="bar-track"><div class="bar-fill" style="width:96.1%"></div><span class="bar-err" style="left:94.4%;width:3.4%"></span></div>
+                <span class="bar-value">96.1%<span class="bar-pm">&plusmn;1.7</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;1729</span>
+                <div class="bar-track"><div class="bar-fill" style="width:71.1%"></div><span class="bar-err" style="left:67.1%;width:8.0%"></span></div>
+                <span class="bar-value">71.1%<span class="bar-pm">&plusmn;4.0</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;2518</span>
+                <div class="bar-track"><div class="bar-fill" style="width:36.7%"></div><span class="bar-err" style="left:32.4%;width:8.6%"></span></div>
+                <span class="bar-value">36.7%<span class="bar-pm">&plusmn;4.3</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;2851</span>
+                <div class="bar-track"><div class="bar-fill" style="width:19.5%"></div><span class="bar-err" style="left:16.0%;width:7.0%"></span></div>
+                <span class="bar-value">19.5%<span class="bar-pm">&plusmn;3.5</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;3099</span>
+                <div class="bar-track"><div class="bar-fill" style="width:10.9%"></div><span class="bar-err" style="left:8.1%;width:5.6%"></span></div>
+                <span class="bar-value">10.9%<span class="bar-pm">&plusmn;2.8</span></span>
+            </div>
+        </div>
+        <figcaption>Score against the Stockfish ladder, conditioned on a 2400 rating, in <strong>rapid</strong> games; the dashed line marks an even (50%) match and the whiskers are &plusmn;1 standard error over 128 games per opponent.</figcaption>
+    </figure>
+
+    <p>Each of those scores converts to a performance rating: the Elo you would need to score that much against that one opponent. For the 2400-conditioned model in rapid:</p>
+    <figure>
+        <div class="bar-chart rating-bars" aria-label="The 2400-conditioned model's Glicko performance rating against five Stockfish levels in rapid games">
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;1347</span>
+                <div class="bar-track"><div class="bar-fill" style="width:31.0%"></div><span class="bar-err" style="left:27.2%;width:7.6%"></span></div>
+                <span class="bar-value">1834<span class="bar-pm">&plusmn;53</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;1729</span>
+                <div class="bar-track"><div class="bar-fill" style="width:34.4%"></div><span class="bar-err" style="left:32.0%;width:4.7%"></span></div>
+                <span class="bar-value">1881<span class="bar-pm">&plusmn;33</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;2518</span>
+                <div class="bar-track"><div class="bar-fill" style="width:73.1%"></div><span class="bar-err" style="left:70.8%;width:4.7%"></span></div>
+                <span class="bar-value">2424<span class="bar-pm">&plusmn;33</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;2851</span>
+                <div class="bar-track"><div class="bar-fill" style="width:85.6%"></div><span class="bar-err" style="left:82.8%;width:5.6%"></span></div>
+                <span class="bar-value">2598<span class="bar-pm">&plusmn;39</span></span>
+            </div>
+            <div class="bar-row">
+                <span class="bar-label">SF&nbsp;3099</span>
+                <div class="bar-track"><div class="bar-fill" style="width:95.6%"></div><span class="bar-err" style="left:91.5%;width:8.3%"></span></div>
+                <span class="bar-value">2739<span class="bar-pm">&plusmn;58</span></span>
+            </div>
+        </div>
+        <figcaption>The 2400-conditioned model's Glicko performance rating against each Stockfish level in <strong>rapid</strong> games. It never settles on a single number: ~1834 against the weakest level, climbing to ~2739 against the strongest.</figcaption>
+    </figure>
+
+    <p>The conditioned rating is still a real dial: raise it and the whole curve lifts, though only so far (the full conditioning&times;opponent picture is in the <a href="#appendix-strength-grids">appendix</a>, with the per-opponent detail in the deep dive below).</p>
+
+    <details class="deep-dive">
+        <summary><span class="deep-dive-tag">Deep dive</span>Playing strength, in detail</summary>
+        <div class="deep-dive-body">
+            <!-- source: eval-suite-20260525T115018Z / stockfish_play -->
+            <p>This grid is the full experiment behind the ladder: every conditioned rating against every Stockfish level, in <strong>rapid</strong> games, <strong>128 games per cell</strong>, scored for the model (win = 1, draw = &frac12;), told who's playing. The ladder above is its top row; reading down a column shows the effect of the conditioned rating.</p>
+            <figure>
+                <div class="table-wrapper">
+                    <table class="eval-heatmap">
+                        <thead>
+                            <tr>
+                                <th class="eh-corner">conditioned<br>rating &darr;</th>
+                                <th>SF&nbsp;1347</th>
+                                <th>SF&nbsp;1729</th>
+                                <th>SF&nbsp;2518</th>
+                                <th>SF&nbsp;2851</th>
+                                <th>SF&nbsp;3099</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><th class="eh-rowlabel">2400</th><td class="hm-90">96.1<span class="hm-se">&plusmn;1.7</span></td><td class="hm-70">71.1<span class="hm-se">&plusmn;4.0</span></td><td class="hm-30">36.7<span class="hm-se">&plusmn;4.3</span></td><td class="hm-10">19.5<span class="hm-se">&plusmn;3.5</span></td><td class="hm-10">10.9<span class="hm-se">&plusmn;2.8</span></td></tr>
+                            <tr><th class="eh-rowlabel">2200</th><td class="hm-90">97.3<span class="hm-se">&plusmn;1.4</span></td><td class="hm-70">71.1<span class="hm-se">&plusmn;4.0</span></td><td class="hm-40">47.3<span class="hm-se">&plusmn;4.4</span></td><td class="hm-10">15.2<span class="hm-se">&plusmn;3.2</span></td><td class="hm-0">9.0<span class="hm-se">&plusmn;2.5</span></td></tr>
+                            <tr><th class="eh-rowlabel">2000</th><td class="hm-90">95.3<span class="hm-se">&plusmn;1.9</span></td><td class="hm-60">69.1<span class="hm-se">&plusmn;4.1</span></td><td class="hm-30">39.1<span class="hm-se">&plusmn;4.3</span></td><td class="hm-10">19.1<span class="hm-se">&plusmn;3.5</span></td><td class="hm-10">12.9<span class="hm-se">&plusmn;3.0</span></td></tr>
+                            <tr><th class="eh-rowlabel">1800</th><td class="hm-90">93.8<span class="hm-se">&plusmn;2.1</span></td><td class="hm-60">61.7<span class="hm-se">&plusmn;4.3</span></td><td class="hm-30">39.1<span class="hm-se">&plusmn;4.3</span></td><td class="hm-10">19.9<span class="hm-se">&plusmn;3.5</span></td><td class="hm-0">7.0<span class="hm-se">&plusmn;2.3</span></td></tr>
+                            <tr><th class="eh-rowlabel">1600</th><td class="hm-90">91.4<span class="hm-se">&plusmn;2.5</span></td><td class="hm-50">55.1<span class="hm-se">&plusmn;4.4</span></td><td class="hm-30">35.5<span class="hm-se">&plusmn;4.2</span></td><td class="hm-10">16.8<span class="hm-se">&plusmn;3.3</span></td><td class="hm-10">12.1<span class="hm-se">&plusmn;2.9</span></td></tr>
+                            <tr><th class="eh-rowlabel">1400</th><td class="hm-80">87.9<span class="hm-se">&plusmn;2.9</span></td><td class="hm-60">62.1<span class="hm-se">&plusmn;4.3</span></td><td class="hm-30">34.8<span class="hm-se">&plusmn;4.2</span></td><td class="hm-10">15.2<span class="hm-se">&plusmn;3.2</span></td><td class="hm-10">10.2<span class="hm-se">&plusmn;2.7</span></td></tr>
+                            <tr><th class="eh-rowlabel">1200</th><td class="hm-80">83.6<span class="hm-se">&plusmn;3.3</span></td><td class="hm-40">41.8<span class="hm-se">&plusmn;4.4</span></td><td class="hm-30">31.2<span class="hm-se">&plusmn;4.1</span></td><td class="hm-10">14.5<span class="hm-se">&plusmn;3.1</span></td><td class="hm-10">12.1<span class="hm-se">&plusmn;2.9</span></td></tr>
+                            <tr><th class="eh-rowlabel">1000</th><td class="hm-70">78.1<span class="hm-se">&plusmn;3.7</span></td><td class="hm-30">37.5<span class="hm-se">&plusmn;4.3</span></td><td class="hm-30">32.8<span class="hm-se">&plusmn;4.2</span></td><td class="hm-10">13.7<span class="hm-se">&plusmn;3.0</span></td><td class="hm-0">9.0<span class="hm-se">&plusmn;2.5</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <figcaption>Model score (%) in <strong>rapid</strong> games for every conditioned rating (rows) against every Stockfish level (columns), each &plusmn; one standard error over the 128 games in the cell. Green is winning, red losing, the yellow band an even match. Reading down a column shows the conditioned rating's effect; reading along a row is one fixed "player" climbing the ladder.</figcaption>
+            </figure>
+            <p>The effect is real but shallow: in the weak-to-middle columns each gets greener from bottom to top, yet the whole 1000-to-2400 swing only moves the score within a band. And it runs out against strength: in the two strongest columns the cells barely change with conditioning, the 2400-conditioned model is no greener than the 1000-conditioned one, both in the red.</p>
+
+            <p>You could average those five results into one rating. But turn each result into its own performance rating (the Elo you would need to score that much against that single opponent) and the model never settles on a number; it traces a slope, climbing with every stronger opponent it meets. And these are ratings on <em>this Stockfish ladder</em>, not a Lichess or FIDE scale. The ladder's Elos are just nominal labels for capped engine settings.</p>
+
+            <figure>
+                <div id="strength-chart"></div>
+                <figcaption>Each result as a Glicko performance rating: one line per conditioned rating, coloured cool (low) through warm (high), against the five Stockfish levels. The key is on the right. A player with one fixed Elo would trace a flat line; every line climbs about 900 points instead. Hover a line to read it off, and toggle between the two time controls.</figcaption>
+            </figure>
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    // Per-opponent Glicko performance ratings, straight from appendix grids C2 (rapid) and C3 (blitz).
+                    StrengthChart.render({
+                        mount: 'strength-chart',
+                        opponents: [
+                            { label: 'SF 1347', rating: 1347 },
+                            { label: 'SF 1729', rating: 1729 },
+                            { label: 'SF 2518', rating: 2518 },
+                            { label: 'SF 2851', rating: 2851 },
+                            { label: 'SF 3099', rating: 3099 }
+                        ],
+                        conds: [1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400],
+                        initial: 'rapid',
+                        data: {
+                            rapid: {
+                                1000: [1564, 1640, 2394, 2533, 2683],
+                                1200: [1618, 1670, 2383, 2545, 2772],
+                                1400: [1686, 1809, 2417, 2565, 2720],
+                                1600: [1744, 1762, 2429, 2579, 2755],
+                                1800: [1788, 1810, 2451, 2622, 2652],
+                                2000: [1840, 1866, 2441, 2610, 2754],
+                                2200: [1908, 1881, 2499, 2545, 2695],
+                                2400: [1834, 1881, 2424, 2598, 2739]
+                            },
+                            blitz: {
+                                1000: [1548, 1688, 2374, 2605, 2726],
+                                1200: [1640, 1695, 2400, 2598, 2728],
+                                1400: [1694, 1706, 2449, 2637, 2668],
+                                1600: [1797, 1801, 2458, 2607, 2785],
+                                1800: [1796, 1840, 2495, 2630, 2715],
+                                2000: [1856, 1869, 2471, 2646, 2736],
+                                2200: [1944, 1847, 2491, 2592, 2768],
+                                2400: [1853, 1868, 2505, 2586, 2694]
+                            }
+                        }
+                    });
+                });
+            </script>
+
+            <p>The 2400-conditioned model reads about <strong>1850</strong> against the weakest Stockfish and about <strong>2700</strong> against the strongest, an ~800-point swing for one model with one set of settings (the full per-opponent ratings, both time controls, are in the <a href="#appendix-strength-grids">appendix</a>). It loses less badly to the strong engines than a 1850 ever would, and wins less crushingly against the weak ones than a 2700 ever would: its win-rate curve is flatter than the Elo model allows, so no single rating (pooled, per-conditioning, or otherwise) is more than a point picked off that slope. And yet a model trained on median-1400 games, told to be a 2400, still plays close to one: predicting the moves of millions of players, weak and strong, means it has seen more chess than most of them have.</p>
+
+            <p>The conditioned rating still does something (raise it and the whole curve lifts) but only so much, and the figure shows where. Against the weakest engine the eight lines fan out across about 340 points; against the strongest they collapse onto each other, barely 90 points apart, so a conditioned 1000 and a conditioned 2400 score about the same.</p>
+
+            <p>Of all <strong>20,480</strong> games, here is how they ended:</p>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>Game ending</th><th>Count</th><th>Share</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Checkmate</td><td>15,717</td><td>76.7%</td></tr>
+                        <tr><td>Threefold repetition</td><td>4,174</td><td>20.4%</td></tr>
+                        <tr><td>Stalemate</td><td>282</td><td>1.4%</td></tr>
+                        <tr><td>Insufficient material</td><td>105</td><td>0.5%</td></tr>
+                        <tr><td>Adjudicated at the 200-move cap</td><td>202</td><td>1.0%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="diagram-caption">How the 20,480 strength games terminated. Over three quarters end in a real checkmate on the board; only 1% had to be adjudicated.</p>
+
+            <p>After checkmate, threefold repetition was the most common way these games ended, at 20.4%.</p>
+        </div>
+    </details>
+
+    <p>The model does not only draw the strongest engines: it occasionally <em>beats</em> them. Across the games where it was told who it was playing, it won <strong>12</strong> outright against the 3099-rated level (Stockfish level 16; the capped settings are in the <a href="#how-strength">strength deep dive</a>) and <strong>50</strong> against the 2851-rated level (level 11), with a single greedy forward pass and no search. The full wins / draws / losses split, per cell and time control, is in the <a href="#appendix-strength-grids">appendix</a>.</p>
+
+    <p>One caveat outweighs the rest: these are results against <strong>Stockfish, not against humans</strong>. An engine chooses moves nothing like a person does, so a score against it says how the model fares in that one match-up, not how it would do against a human of any given rating. Telling those two apart is what the <a href="https://arxiv.org/abs/2006.01855">Maia</a> line of work set out to do, and it is the question we turn to next.</p>
+
+    <h2 id="comparison">How does it compare to the state of the art?</h2>
+    <p>Hitting our own targets is the local question. The global one: is a 91M-parameter model trained on a single GPU even in the same conversation as the published research on human-move prediction? The standard benchmark is the test set released with <a href="https://arxiv.org/abs/2410.03893">Allie</a> (884,049 Lichess blitz positions) scored by how often a system's top move equals the move the human actually played.</p>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th>System</th><th>Move match</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Maia-3 (79M, 2026)&#8202;&dagger;</td><td>57.1%</td></tr>
+                <tr><td>Maia-3 (23M, 2026)&#8202;&dagger;</td><td>56.6%</td></tr>
+                <tr><td><strong>chess-autocomplete-v1 (91M)</strong></td><td><strong>56.0%</strong></td></tr>
+                <tr><td>Allie (adaptive search, 2024)&#8202;&dagger;&#8202;&#9881;</td><td>55.9%</td></tr>
+                <tr><td>Allie (policy, 2024)&#8202;&dagger;</td><td>55.7%</td></tr>
+                <tr><td>Maia-3 (5M, 2026)&#8202;&dagger;</td><td>55.4%</td></tr>
+                <tr><td>GPT-3.5 (2023)&#8202;&dagger;</td><td>53.7%</td></tr>
+                <tr><td>Maia-2 (2024)&#8202;&dagger;</td><td>52.0%</td></tr>
+                <tr><td>Maia (original, 2020)&#8202;&dagger;</td><td>51.6%</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="diagram-caption">Move-match on the Allie test set. <strong>&dagger;</strong> numbers are taken from the <a href="https://arxiv.org/abs/2605.19091">Maia-3 paper</a> rather than re-run here, so read the ranking as indicative. <strong>&#9881;</strong> Allie (adaptive search) adds tree search at inference time. Every other row, ours included, is a single forward pass. All values carry a 95% confidence interval of about &plusmn;0.1.</p>
+
+    <p>On this benchmark the only entries above the model are the two larger <a href="https://arxiv.org/abs/2605.19091">Maia-3</a> variants (23M and 79M), which top the leaderboard and were released in May 2026; it lands ahead of Allie, GPT-3.5, and the earlier Maia and Maia-2 systems. The full head-to-head reproductions of the Maia and Allie benchmarks are in the <a href="#appendix-benchmark-reproductions">appendix</a>, along with a <a href="#appendix-move-types">breakdown of where the 56% comes from</a>.</p>
+
+    <h2 id="conclusion">Blindfolded, and near the top</h2>
+    <p>The question was whether a model that only ever reads a stream of moves, with no board, no rules, and no search, could play chess blindfolded. It can. It keeps its moves legal 99.8% of the time even in positions no human would ever steer into, which it can only do by rebuilding the board in its head from the moves alone. On the standard human-move benchmark it matches <strong>56%</strong> of the moves real players actually chose, behind only the two larger Maia-3 networks and ahead of every Maia, Maia-2, Allie, and GPT-3.5 entry, at <strong>91M parameters</strong> and with none of their machinery: no board, no search, no chess-specific architecture.</p>
+
+    <p>The strangest part is who it learned from. The median game in its training data was played around <strong>1400</strong>. Tell it to be a 2400 and it plays close to one; against the strongest Stockfish it reaches into the 2700s and now and then beats engines no 1400-rated player could touch. A model that learns from millions of players ends up having seen more chess than any single one of them.</p>
+
+    <p>And it does all of it for the only reason it was ever trained to:</p>
+    <p class="emphasized-quote">predict the next token</p>
+    <p>Nothing in it knows what a board is. Predicting the next move was enough to make one appear.</p>
+
+    <h2 id="play">That board at the top? It's the full model</h2>
+    <p>The board at the top of this page is the real thing: the full 91M parameter model running in your browser through ONNX Runtime with WebGPU. At each move the model produces a probability distribution over moves; illegal moves are masked out, and by default it simply plays its most likely legal move (you can switch on temperature and top-k sampling in the settings to make it less predictable). The interface handles the FIDE draw rules. By default the model is conditioned as a 2500 rated rapid player, the top rating bucket, one notch above the 2400 used for the strength numbers above. Good luck.</p>
+
+    <h2 id="resources">Get the model, dataset, and code</h2>
+    <p>Everything in this post is open:</p>
+    <ul>
+        <li>The model, in PyTorch, safetensors and ONNX formats: <a href="https://huggingface.co/Alfredvc/chess-autocomplete-v1">Alfredvc/chess-autocomplete-v1</a></li>
+        <li>The processed dataset: <a href="https://huggingface.co/datasets/Alfredvc/chess-autocomplete-lichess">Alfredvc/chess-autocomplete-lichess</a></li>
+        <li>The full training and evaluation code: <a href="https://github.com/Alfredvc/chess-autocomplete">Alfredvc/chess-autocomplete</a></li>
+    </ul>
+
+    <h2 id="references" class="article-references">References</h2>
+    <ul>
+        <li><a href="https://database.lichess.org/">Lichess open database</a></li>
+        <li><a href="https://arxiv.org/abs/2605.19091">Chessformer: A Unified Architecture for Chess Modeling (Maia-3)</a></li>
+        <li><a href="https://arxiv.org/abs/2409.20553">Maia-2: A Unified Model for Human-AI Alignment in Chess</a></li>
+        <li><a href="https://arxiv.org/abs/2410.03893">Human-aligned Chess with a Bit of Search (Allie)</a></li>
+        <li><a href="https://arxiv.org/abs/2006.01855">Aligning Superhuman AI with Human Behavior: Chess as a Model System (Maia)</a></li>
+        <li><a href="https://arxiv.org/abs/2402.04494">Amortized Planning with Large-Scale Transformers: A Case Study on Chess (Grandmaster-Level Chess Without Search)</a></li>
+        <li><a href="https://kellerjordan.github.io/posts/muon/">Muon optimizer</a></li>
+        <li><a href="https://github.com/KellerJordan/modded-nanogpt">modded-nanogpt</a></li>
+        <li><a href="https://github.com/Dao-AILab/flash-attention">FlashAttention</a></li>
+        <li><a href="https://arxiv.org/abs/2405.18392">Scaling Laws and Compute-Optimal Training Beyond Fixed Training Durations</a></li>
+        <li><a href="http://www.glicko.net/glicko/glicko.pdf">The Glicko system (Glickman)</a></li>
+        <li><a href="https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf">Language Models are Unsupervised Multitask Learners (GPT-2)</a></li>
+    </ul>
+
+    <h2 id="appendix">Appendix</h2>
+
+    <h3 id="appendix-rating-grids">The full rating&#215;rating grids</h3>
+    <!-- source: eval-suite-20260525T115018Z / stratified_human (per_cell_metrics, metadata_deltas) -->
+    <p>The coarse 4&#215;4 heatmap in <a href="#metadata-value">The value of Elo and time control information</a> bins a finer 16&#215;16 grid. Here is the full version, all told who's playing, white rating down the rows and black rating across the columns: the metadata gain (<a href="#fig-a1">A1</a>), brightest at the corners; raw move-match (<a href="#fig-a2">A2</a>), which rises with rating because stronger players are more predictable; and the loss (<a href="#fig-a3">A3</a>), which falls the same way. On a narrow screen the grids scroll sideways.</p>
+
+    <figure id="fig-a1" class="breakout">
+        <div class="eval-heatmap-wrap">
+<table class="eval-heatmap elo-heatmap eval-heatmap--wide">
+  <thead>
+    <tr>
+      <th class="eh-corner">W&nbsp;&darr;&nbsp;/&nbsp;B&nbsp;&rarr;</th><th>1000</th><th>1100</th><th>1200</th><th>1300</th><th>1400</th><th>1500</th><th>1600</th><th>1700</th><th>1800</th><th>1900</th><th>2000</th><th>2100</th><th>2200</th><th>2300</th><th>2400</th><th>2500</th></tr>
+  </thead>
+  <tbody><tr><th class="eh-rowlabel">1000</th><td class="hm-s2">+0.95</td><td class="hm-s1">+0.76</td><td class="hm-s1">+0.81</td><td class="hm-s2">+1.06</td><td class="hm-s2">+0.98</td><td class="hm-s1">+0.80</td><td class="hm-s2">+1.11</td><td class="hm-s2">+0.88</td><td class="hm-s2">+1.02</td><td class="hm-s3">+1.28</td><td class="hm-s3">+1.24</td><td class="hm-s4">+1.64</td><td class="hm-s5">+2.16</td><td class="hm-s5">+2.19</td><td class="hm-s5">+2.39</td><td class="hm-s5">+2.37</td></tr><tr><th class="eh-rowlabel">1100</th><td class="hm-s1">+0.59</td><td class="hm-s1">+0.57</td><td class="hm-s1">+0.57</td><td class="hm-s1">+0.64</td><td class="hm-s1">+0.54</td><td class="hm-s1">+0.63</td><td class="hm-s1">+0.70</td><td class="hm-s1">+0.73</td><td class="hm-s1">+0.76</td><td class="hm-s2">+1.06</td><td class="hm-s2">+1.13</td><td class="hm-s3">+1.58</td><td class="hm-s4">+1.80</td><td class="hm-s4">+1.64</td><td class="hm-s4">+1.83</td><td class="hm-s5">+2.35</td></tr><tr><th class="eh-rowlabel">1200</th><td class="hm-s2">+0.82</td><td class="hm-s1">+0.51</td><td class="hm-s1">+0.46</td><td class="hm-s1">+0.47</td><td class="hm-s1">+0.41</td><td class="hm-s0">+0.40</td><td class="hm-s1">+0.56</td><td class="hm-s1">+0.44</td><td class="hm-s1">+0.58</td><td class="hm-s1">+0.76</td><td class="hm-s3">+1.31</td><td class="hm-s3">+1.34</td><td class="hm-s3">+1.50</td><td class="hm-s3">+1.53</td><td class="hm-s4">+1.80</td><td class="hm-s5">+2.45</td></tr><tr><th class="eh-rowlabel">1300</th><td class="hm-s1">+0.75</td><td class="hm-s1">+0.66</td><td class="hm-s1">+0.46</td><td class="hm-s0">+0.28</td><td class="hm-s0">+0.30</td><td class="hm-s0">+0.33</td><td class="hm-s0">+0.38</td><td class="hm-s0">+0.33</td><td class="hm-s1">+0.51</td><td class="hm-s1">+0.68</td><td class="hm-s2">+1.00</td><td class="hm-s2">+1.06</td><td class="hm-s2">+1.21</td><td class="hm-s3">+1.53</td><td class="hm-s3">+1.60</td><td class="hm-s4">+1.63</td></tr><tr><th class="eh-rowlabel">1400</th><td class="hm-s1">+0.73</td><td class="hm-s1">+0.49</td><td class="hm-s1">+0.48</td><td class="hm-s0">+0.30</td><td class="hm-s0">+0.32</td><td class="hm-s0">+0.14</td><td class="hm-s0">+0.28</td><td class="hm-s0">+0.27</td><td class="hm-s0">+0.34</td><td class="hm-s1">+0.69</td><td class="hm-s2">+0.86</td><td class="hm-s1">+0.79</td><td class="hm-s2">+1.08</td><td class="hm-s2">+1.18</td><td class="hm-s3">+1.38</td><td class="hm-s3">+1.42</td></tr><tr><th class="eh-rowlabel">1500</th><td class="hm-s1">+0.73</td><td class="hm-s1">+0.56</td><td class="hm-s0">+0.40</td><td class="hm-s0">+0.39</td><td class="hm-s0">+0.37</td><td class="hm-s0">+0.25</td><td class="hm-s0">+0.23</td><td class="hm-s0">+0.16</td><td class="hm-s0">+0.18</td><td class="hm-s1">+0.51</td><td class="hm-s1">+0.49</td><td class="hm-s1">+0.67</td><td class="hm-s2">+0.83</td><td class="hm-s1">+0.75</td><td class="hm-s2">+1.17</td><td class="hm-s3">+1.31</td></tr><tr><th class="eh-rowlabel">1600</th><td class="hm-s1">+0.73</td><td class="hm-s1">+0.51</td><td class="hm-s0">+0.39</td><td class="hm-s0">+0.39</td><td class="hm-s0">+0.25</td><td class="hm-s0">+0.19</td><td class="hm-s0">+0.11</td><td class="hm-s0">+0.04</td><td class="hm-s0">+0.05</td><td class="hm-s1">+0.47</td><td class="hm-s0">+0.35</td><td class="hm-s1">+0.61</td><td class="hm-s1">+0.43</td><td class="hm-s1">+0.80</td><td class="hm-s2">+1.09</td><td class="hm-s2">+1.16</td></tr><tr><th class="eh-rowlabel">1700</th><td class="hm-s1">+0.77</td><td class="hm-s1">+0.61</td><td class="hm-s0">+0.36</td><td class="hm-s0">+0.35</td><td class="hm-s0">+0.23</td><td class="hm-s0">+0.29</td><td class="hm-s0">+0.08</td><td class="hm-s0">+0.01</td><td class="hm-s0">+0.00</td><td class="hm-s0">+0.12</td><td class="hm-s0">+0.29</td><td class="hm-s1">+0.50</td><td class="hm-s1">+0.49</td><td class="hm-s2">+0.91</td><td class="hm-s2">+1.02</td><td class="hm-s2">+1.21</td></tr><tr><th class="eh-rowlabel">1800</th><td class="hm-s2">+0.83</td><td class="hm-s1">+0.69</td><td class="hm-s1">+0.55</td><td class="hm-s1">+0.51</td><td class="hm-s0">+0.40</td><td class="hm-s0">+0.20</td><td class="hm-s0">+0.03</td><td class="hm-s0">-0.01</td><td class="hm-s0">+0.08</td><td class="hm-s0">+0.20</td><td class="hm-s0">+0.35</td><td class="hm-s0">+0.29</td><td class="hm-s1">+0.45</td><td class="hm-s1">+0.71</td><td class="hm-s1">+0.63</td><td class="hm-s2">+0.97</td></tr><tr><th class="eh-rowlabel">1900</th><td class="hm-s2">+0.88</td><td class="hm-s1">+0.75</td><td class="hm-s1">+0.64</td><td class="hm-s1">+0.46</td><td class="hm-s1">+0.56</td><td class="hm-s0">+0.37</td><td class="hm-s0">+0.07</td><td class="hm-s0">+0.05</td><td class="hm-s0">+0.13</td><td class="hm-s0">+0.07</td><td class="hm-s0">+0.29</td><td class="hm-s1">+0.43</td><td class="hm-s0">+0.37</td><td class="hm-s1">+0.60</td><td class="hm-s1">+0.67</td><td class="hm-s1">+0.76</td></tr><tr><th class="eh-rowlabel">2000</th><td class="hm-s2">+0.97</td><td class="hm-s2">+1.02</td><td class="hm-s2">+0.83</td><td class="hm-s1">+0.60</td><td class="hm-s1">+0.48</td><td class="hm-s0">+0.30</td><td class="hm-s0">+0.10</td><td class="hm-s0">+0.13</td><td class="hm-s0">+0.04</td><td class="hm-s0">+0.25</td><td class="hm-s0">+0.30</td><td class="hm-s0">+0.38</td><td class="hm-s0">+0.30</td><td class="hm-s1">+0.45</td><td class="hm-s1">+0.64</td><td class="hm-s1">+0.76</td></tr><tr><th class="eh-rowlabel">2100</th><td class="hm-s2">+1.00</td><td class="hm-s2">+1.19</td><td class="hm-s2">+1.04</td><td class="hm-s1">+0.71</td><td class="hm-s1">+0.50</td><td class="hm-s1">+0.43</td><td class="hm-s0">+0.24</td><td class="hm-s0">+0.15</td><td class="hm-s0">+0.13</td><td class="hm-s0">+0.31</td><td class="hm-s1">+0.43</td><td class="hm-s0">+0.28</td><td class="hm-s1">+0.45</td><td class="hm-s1">+0.48</td><td class="hm-s1">+0.58</td><td class="hm-s1">+0.67</td></tr><tr><th class="eh-rowlabel">2200</th><td class="hm-s3">+1.42</td><td class="hm-s2">+1.20</td><td class="hm-s2">+1.03</td><td class="hm-s2">+0.95</td><td class="hm-s1">+0.71</td><td class="hm-s1">+0.51</td><td class="hm-s1">+0.41</td><td class="hm-s0">+0.37</td><td class="hm-s0">+0.27</td><td class="hm-s0">+0.28</td><td class="hm-s1">+0.41</td><td class="hm-s1">+0.41</td><td class="hm-s0">+0.23</td><td class="hm-s1">+0.47</td><td class="hm-s1">+0.79</td><td class="hm-s2">+0.91</td></tr><tr><th class="eh-rowlabel">2300</th><td class="hm-s3">+1.61</td><td class="hm-s3">+1.61</td><td class="hm-s3">+1.25</td><td class="hm-s2">+1.08</td><td class="hm-s2">+1.12</td><td class="hm-s1">+0.68</td><td class="hm-s1">+0.74</td><td class="hm-s1">+0.69</td><td class="hm-s0">+0.39</td><td class="hm-s0">+0.38</td><td class="hm-s0">+0.36</td><td class="hm-s1">+0.58</td><td class="hm-s1">+0.53</td><td class="hm-s1">+0.59</td><td class="hm-s1">+0.73</td><td class="hm-s2">+0.85</td></tr><tr><th class="eh-rowlabel">2400</th><td class="hm-s4">+1.87</td><td class="hm-s4">+1.71</td><td class="hm-s3">+1.38</td><td class="hm-s3">+1.32</td><td class="hm-s2">+0.99</td><td class="hm-s2">+0.91</td><td class="hm-s2">+1.16</td><td class="hm-s1">+0.64</td><td class="hm-s1">+0.61</td><td class="hm-s1">+0.57</td><td class="hm-s1">+0.55</td><td class="hm-s1">+0.64</td><td class="hm-s1">+0.70</td><td class="hm-s1">+0.67</td><td class="hm-s1">+0.77</td><td class="hm-s2">+0.91</td></tr><tr><th class="eh-rowlabel">2500</th><td class="hm-s4">+1.99</td><td class="hm-s4">+1.79</td><td class="hm-s3">+1.51</td><td class="hm-s3">+1.51</td><td class="hm-s3">+1.42</td><td class="hm-s2">+1.02</td><td class="hm-s2">+1.13</td><td class="hm-s2">+1.08</td><td class="hm-s2">+0.97</td><td class="hm-s2">+1.00</td><td class="hm-s2">+1.06</td><td class="hm-s1">+0.75</td><td class="hm-s2">+0.89</td><td class="hm-s2">+0.93</td><td class="hm-s2">+0.96</td><td class="hm-s2">+1.12</td></tr></tbody>
+</table>
+</div>
+
+        <figcaption><strong>A1</strong>: Metadata gain in human-move match (percentage points) over playing blind, 16&#215;16 rating grid. Brightest at the corners.</figcaption>
+    </figure>
+
+    <figure id="fig-a2" class="breakout">
+        <div class="eval-heatmap-wrap">
+<table class="eval-heatmap elo-heatmap eval-heatmap--wide">
+  <thead>
+    <tr>
+      <th class="eh-corner">W&nbsp;&darr;&nbsp;/&nbsp;B&nbsp;&rarr;</th><th>1000</th><th>1100</th><th>1200</th><th>1300</th><th>1400</th><th>1500</th><th>1600</th><th>1700</th><th>1800</th><th>1900</th><th>2000</th><th>2100</th><th>2200</th><th>2300</th><th>2400</th><th>2500</th></tr>
+  </thead>
+  <tbody><tr><th class="eh-rowlabel">1000</th><td class="hm-s0">50.5</td><td class="hm-s1">52.3</td><td class="hm-s1">52.7</td><td class="hm-s1">53.0</td><td class="hm-s1">53.6</td><td class="hm-s1">52.5</td><td class="hm-s2">54.0</td><td class="hm-s2">54.2</td><td class="hm-s2">54.6</td><td class="hm-s2">54.8</td><td class="hm-s2">54.6</td><td class="hm-s2">54.9</td><td class="hm-s3">55.8</td><td class="hm-s3">55.6</td><td class="hm-s3">56.4</td><td class="hm-s3">56.4</td></tr><tr><th class="eh-rowlabel">1100</th><td class="hm-s1">52.6</td><td class="hm-s1">53.8</td><td class="hm-s2">54.2</td><td class="hm-s2">54.0</td><td class="hm-s2">54.3</td><td class="hm-s2">54.3</td><td class="hm-s2">55.1</td><td class="hm-s2">55.6</td><td class="hm-s3">55.6</td><td class="hm-s3">56.0</td><td class="hm-s3">56.4</td><td class="hm-s3">56.7</td><td class="hm-s3">57.2</td><td class="hm-s3">56.6</td><td class="hm-s3">56.9</td><td class="hm-s4">58.0</td></tr><tr><th class="eh-rowlabel">1200</th><td class="hm-s1">52.3</td><td class="hm-s2">54.4</td><td class="hm-s2">54.9</td><td class="hm-s2">55.0</td><td class="hm-s2">55.2</td><td class="hm-s2">55.1</td><td class="hm-s3">55.7</td><td class="hm-s2">55.5</td><td class="hm-s3">56.1</td><td class="hm-s4">57.3</td><td class="hm-s3">57.2</td><td class="hm-s3">57.1</td><td class="hm-s4">57.4</td><td class="hm-s4">57.6</td><td class="hm-s4">57.9</td><td class="hm-s4">58.7</td></tr><tr><th class="eh-rowlabel">1300</th><td class="hm-s1">52.8</td><td class="hm-s2">54.2</td><td class="hm-s2">55.2</td><td class="hm-s3">55.9</td><td class="hm-s3">55.9</td><td class="hm-s3">55.8</td><td class="hm-s3">56.3</td><td class="hm-s3">56.0</td><td class="hm-s3">56.4</td><td class="hm-s3">56.9</td><td class="hm-s4">57.7</td><td class="hm-s4">57.8</td><td class="hm-s4">58.0</td><td class="hm-s4">57.8</td><td class="hm-s4">58.3</td><td class="hm-s4">58.0</td></tr><tr><th class="eh-rowlabel">1400</th><td class="hm-s1">53.6</td><td class="hm-s2">54.6</td><td class="hm-s3">55.8</td><td class="hm-s3">56.0</td><td class="hm-s3">56.5</td><td class="hm-s3">56.3</td><td class="hm-s3">56.4</td><td class="hm-s3">56.8</td><td class="hm-s3">57.0</td><td class="hm-s4">57.6</td><td class="hm-s4">57.9</td><td class="hm-s4">57.5</td><td class="hm-s4">58.1</td><td class="hm-s4">58.2</td><td class="hm-s4">58.5</td><td class="hm-s4">58.5</td></tr><tr><th class="eh-rowlabel">1500</th><td class="hm-s1">53.2</td><td class="hm-s2">54.7</td><td class="hm-s2">55.2</td><td class="hm-s3">55.9</td><td class="hm-s3">56.6</td><td class="hm-s3">56.8</td><td class="hm-s3">56.7</td><td class="hm-s3">57.0</td><td class="hm-s3">57.0</td><td class="hm-s4">58.1</td><td class="hm-s4">57.9</td><td class="hm-s4">58.0</td><td class="hm-s4">58.5</td><td class="hm-s4">58.3</td><td class="hm-s4">58.2</td><td class="hm-s4">58.3</td></tr><tr><th class="eh-rowlabel">1600</th><td class="hm-s2">54.1</td><td class="hm-s3">55.6</td><td class="hm-s3">55.8</td><td class="hm-s3">56.8</td><td class="hm-s3">57.0</td><td class="hm-s3">57.1</td><td class="hm-s4">57.3</td><td class="hm-s4">57.4</td><td class="hm-s4">57.7</td><td class="hm-s4">58.4</td><td class="hm-s4">58.2</td><td class="hm-s4">58.5</td><td class="hm-s4">58.6</td><td class="hm-s4">58.9</td><td class="hm-s5">59.5</td><td class="hm-s5">59.0</td></tr><tr><th class="eh-rowlabel">1700</th><td class="hm-s2">54.6</td><td class="hm-s3">55.8</td><td class="hm-s3">55.8</td><td class="hm-s3">56.9</td><td class="hm-s3">56.8</td><td class="hm-s4">57.4</td><td class="hm-s4">57.6</td><td class="hm-s4">57.4</td><td class="hm-s4">57.9</td><td class="hm-s4">58.1</td><td class="hm-s4">58.5</td><td class="hm-s5">59.0</td><td class="hm-s5">59.2</td><td class="hm-s5">59.5</td><td class="hm-s5">59.5</td><td class="hm-s5">59.6</td></tr><tr><th class="eh-rowlabel">1800</th><td class="hm-s2">55.2</td><td class="hm-s3">56.6</td><td class="hm-s3">56.3</td><td class="hm-s3">57.2</td><td class="hm-s4">57.4</td><td class="hm-s4">57.8</td><td class="hm-s4">57.8</td><td class="hm-s4">58.2</td><td class="hm-s4">58.5</td><td class="hm-s4">58.6</td><td class="hm-s4">58.9</td><td class="hm-s4">58.6</td><td class="hm-s5">59.6</td><td class="hm-s5">59.5</td><td class="hm-s5">59.8</td><td class="hm-s5">59.6</td></tr><tr><th class="eh-rowlabel">1900</th><td class="hm-s3">55.9</td><td class="hm-s3">56.8</td><td class="hm-s3">57.0</td><td class="hm-s4">57.7</td><td class="hm-s4">57.6</td><td class="hm-s4">58.0</td><td class="hm-s4">57.9</td><td class="hm-s4">58.2</td><td class="hm-s4">58.6</td><td class="hm-s4">58.7</td><td class="hm-s5">59.1</td><td class="hm-s5">59.3</td><td class="hm-s5">59.9</td><td class="hm-s5">59.5</td><td class="hm-s5">60.0</td><td class="hm-s5">60.3</td></tr><tr><th class="eh-rowlabel">2000</th><td class="hm-s3">55.7</td><td class="hm-s3">56.8</td><td class="hm-s4">57.6</td><td class="hm-s4">57.9</td><td class="hm-s4">57.9</td><td class="hm-s4">58.2</td><td class="hm-s4">58.2</td><td class="hm-s4">58.6</td><td class="hm-s4">58.2</td><td class="hm-s4">58.7</td><td class="hm-s5">59.3</td><td class="hm-s5">59.4</td><td class="hm-s5">59.8</td><td class="hm-s5">59.9</td><td class="hm-s5">60.0</td><td class="hm-s5">59.8</td></tr><tr><th class="eh-rowlabel">2100</th><td class="hm-s3">55.8</td><td class="hm-s4">57.5</td><td class="hm-s4">57.8</td><td class="hm-s4">58.0</td><td class="hm-s4">58.3</td><td class="hm-s4">58.7</td><td class="hm-s4">58.6</td><td class="hm-s5">59.1</td><td class="hm-s5">59.2</td><td class="hm-s5">59.5</td><td class="hm-s5">59.5</td><td class="hm-s5">59.6</td><td class="hm-s5">59.9</td><td class="hm-s5">60.0</td><td class="hm-s5">60.0</td><td class="hm-s5">60.0</td></tr><tr><th class="eh-rowlabel">2200</th><td class="hm-s3">56.0</td><td class="hm-s4">57.6</td><td class="hm-s4">57.8</td><td class="hm-s4">58.4</td><td class="hm-s4">58.4</td><td class="hm-s4">58.4</td><td class="hm-s5">59.1</td><td class="hm-s5">59.0</td><td class="hm-s5">59.4</td><td class="hm-s5">59.7</td><td class="hm-s5">59.8</td><td class="hm-s5">59.9</td><td class="hm-s5">59.5</td><td class="hm-s5">59.9</td><td class="hm-s5">60.3</td><td class="hm-s5">60.1</td></tr><tr><th class="eh-rowlabel">2300</th><td class="hm-s3">55.6</td><td class="hm-s4">57.6</td><td class="hm-s4">57.9</td><td class="hm-s4">58.3</td><td class="hm-s4">58.8</td><td class="hm-s4">58.3</td><td class="hm-s5">59.1</td><td class="hm-s5">59.6</td><td class="hm-s5">59.6</td><td class="hm-s5">59.7</td><td class="hm-s5">59.8</td><td class="hm-s5">60.0</td><td class="hm-s5">60.2</td><td class="hm-s5">60.3</td><td class="hm-s5">60.6</td><td class="hm-s5">60.2</td></tr><tr><th class="eh-rowlabel">2400</th><td class="hm-s3">56.6</td><td class="hm-s4">57.4</td><td class="hm-s4">58.4</td><td class="hm-s5">59.0</td><td class="hm-s4">58.8</td><td class="hm-s4">58.7</td><td class="hm-s5">59.8</td><td class="hm-s5">59.9</td><td class="hm-s5">59.9</td><td class="hm-s5">60.1</td><td class="hm-s5">59.9</td><td class="hm-s5">59.9</td><td class="hm-s5">60.4</td><td class="hm-s5">60.4</td><td class="hm-s5">60.3</td><td class="hm-s5">60.3</td></tr><tr><th class="eh-rowlabel">2500</th><td class="hm-s3">56.9</td><td class="hm-s4">57.9</td><td class="hm-s4">58.1</td><td class="hm-s4">58.4</td><td class="hm-s5">59.1</td><td class="hm-s4">57.8</td><td class="hm-s5">59.3</td><td class="hm-s5">59.7</td><td class="hm-s5">59.7</td><td class="hm-s5">60.1</td><td class="hm-s5">60.1</td><td class="hm-s5">59.7</td><td class="hm-s5">60.0</td><td class="hm-s5">60.3</td><td class="hm-s5">60.3</td><td class="hm-s5">59.6</td></tr></tbody>
+</table>
+</div>
+
+        <figcaption><strong>A2</strong>: Top-1 human-move match (%), 16&#215;16 rating grid. Darker is higher.</figcaption>
+    </figure>
+
+    <figure id="fig-a3" class="breakout">
+        <div class="eval-heatmap-wrap">
+<table class="eval-heatmap elo-heatmap eval-heatmap--wide">
+  <thead>
+    <tr>
+      <th class="eh-corner">W&nbsp;&darr;&nbsp;/&nbsp;B&nbsp;&rarr;</th><th>1000</th><th>1100</th><th>1200</th><th>1300</th><th>1400</th><th>1500</th><th>1600</th><th>1700</th><th>1800</th><th>1900</th><th>2000</th><th>2100</th><th>2200</th><th>2300</th><th>2400</th><th>2500</th></tr>
+  </thead>
+  <tbody><tr><th class="eh-rowlabel">1000</th><td class="hm-s0">1.629</td><td class="hm-s1">1.550</td><td class="hm-s0">1.563</td><td class="hm-s0">1.561</td><td class="hm-s1">1.526</td><td class="hm-s0">1.571</td><td class="hm-s1">1.522</td><td class="hm-s1">1.502</td><td class="hm-s2">1.476</td><td class="hm-s2">1.467</td><td class="hm-s2">1.470</td><td class="hm-s2">1.474</td><td class="hm-s2">1.447</td><td class="hm-s2">1.457</td><td class="hm-s2">1.437</td><td class="hm-s2">1.434</td></tr><tr><th class="eh-rowlabel">1100</th><td class="hm-s1">1.540</td><td class="hm-s1">1.496</td><td class="hm-s2">1.477</td><td class="hm-s1">1.498</td><td class="hm-s2">1.484</td><td class="hm-s2">1.487</td><td class="hm-s2">1.456</td><td class="hm-s2">1.446</td><td class="hm-s2">1.426</td><td class="hm-s2">1.422</td><td class="hm-s3">1.402</td><td class="hm-s3">1.394</td><td class="hm-s3">1.381</td><td class="hm-s3">1.396</td><td class="hm-s3">1.393</td><td class="hm-s3">1.371</td></tr><tr><th class="eh-rowlabel">1200</th><td class="hm-s0">1.581</td><td class="hm-s2">1.469</td><td class="hm-s2">1.446</td><td class="hm-s2">1.439</td><td class="hm-s2">1.443</td><td class="hm-s2">1.456</td><td class="hm-s2">1.435</td><td class="hm-s2">1.430</td><td class="hm-s3">1.411</td><td class="hm-s3">1.370</td><td class="hm-s3">1.379</td><td class="hm-s3">1.382</td><td class="hm-s3">1.362</td><td class="hm-s3">1.362</td><td class="hm-s4">1.350</td><td class="hm-s4">1.344</td></tr><tr><th class="eh-rowlabel">1300</th><td class="hm-s1">1.557</td><td class="hm-s1">1.494</td><td class="hm-s2">1.440</td><td class="hm-s3">1.403</td><td class="hm-s3">1.407</td><td class="hm-s3">1.414</td><td class="hm-s3">1.404</td><td class="hm-s3">1.409</td><td class="hm-s3">1.389</td><td class="hm-s3">1.371</td><td class="hm-s4">1.349</td><td class="hm-s4">1.342</td><td class="hm-s4">1.342</td><td class="hm-s4">1.349</td><td class="hm-s4">1.333</td><td class="hm-s4">1.342</td></tr><tr><th class="eh-rowlabel">1400</th><td class="hm-s1">1.521</td><td class="hm-s2">1.473</td><td class="hm-s2">1.431</td><td class="hm-s3">1.407</td><td class="hm-s3">1.394</td><td class="hm-s3">1.389</td><td class="hm-s3">1.384</td><td class="hm-s3">1.370</td><td class="hm-s3">1.362</td><td class="hm-s4">1.348</td><td class="hm-s4">1.336</td><td class="hm-s4">1.340</td><td class="hm-s4">1.334</td><td class="hm-s4">1.322</td><td class="hm-s4">1.317</td><td class="hm-s4">1.319</td></tr><tr><th class="eh-rowlabel">1500</th><td class="hm-s1">1.542</td><td class="hm-s2">1.477</td><td class="hm-s2">1.444</td><td class="hm-s3">1.416</td><td class="hm-s3">1.377</td><td class="hm-s3">1.366</td><td class="hm-s3">1.373</td><td class="hm-s3">1.364</td><td class="hm-s3">1.359</td><td class="hm-s4">1.330</td><td class="hm-s4">1.330</td><td class="hm-s4">1.320</td><td class="hm-s4">1.313</td><td class="hm-s4">1.310</td><td class="hm-s4">1.314</td><td class="hm-s4">1.326</td></tr><tr><th class="eh-rowlabel">1600</th><td class="hm-s1">1.506</td><td class="hm-s2">1.438</td><td class="hm-s2">1.429</td><td class="hm-s3">1.379</td><td class="hm-s3">1.371</td><td class="hm-s3">1.362</td><td class="hm-s4">1.349</td><td class="hm-s4">1.335</td><td class="hm-s4">1.330</td><td class="hm-s4">1.315</td><td class="hm-s4">1.312</td><td class="hm-s4">1.300</td><td class="hm-s4">1.293</td><td class="hm-s4">1.290</td><td class="hm-s5">1.270</td><td class="hm-s4">1.293</td></tr><tr><th class="eh-rowlabel">1700</th><td class="hm-s2">1.486</td><td class="hm-s2">1.426</td><td class="hm-s3">1.420</td><td class="hm-s3">1.383</td><td class="hm-s3">1.375</td><td class="hm-s3">1.357</td><td class="hm-s4">1.331</td><td class="hm-s4">1.334</td><td class="hm-s4">1.314</td><td class="hm-s4">1.314</td><td class="hm-s4">1.299</td><td class="hm-s4">1.287</td><td class="hm-s5">1.268</td><td class="hm-s5">1.263</td><td class="hm-s5">1.263</td><td class="hm-s5">1.264</td></tr><tr><th class="eh-rowlabel">1800</th><td class="hm-s2">1.459</td><td class="hm-s3">1.398</td><td class="hm-s3">1.398</td><td class="hm-s3">1.377</td><td class="hm-s3">1.358</td><td class="hm-s3">1.352</td><td class="hm-s4">1.331</td><td class="hm-s4">1.311</td><td class="hm-s4">1.302</td><td class="hm-s4">1.292</td><td class="hm-s4">1.286</td><td class="hm-s4">1.287</td><td class="hm-s5">1.256</td><td class="hm-s5">1.257</td><td class="hm-s5">1.249</td><td class="hm-s5">1.258</td></tr><tr><th class="eh-rowlabel">1900</th><td class="hm-s2">1.432</td><td class="hm-s3">1.393</td><td class="hm-s3">1.372</td><td class="hm-s3">1.354</td><td class="hm-s4">1.345</td><td class="hm-s4">1.331</td><td class="hm-s4">1.328</td><td class="hm-s4">1.305</td><td class="hm-s4">1.293</td><td class="hm-s4">1.288</td><td class="hm-s5">1.280</td><td class="hm-s5">1.271</td><td class="hm-s5">1.242</td><td class="hm-s5">1.265</td><td class="hm-s5">1.235</td><td class="hm-s5">1.233</td></tr><tr><th class="eh-rowlabel">2000</th><td class="hm-s2">1.430</td><td class="hm-s3">1.394</td><td class="hm-s3">1.361</td><td class="hm-s4">1.335</td><td class="hm-s4">1.325</td><td class="hm-s4">1.319</td><td class="hm-s4">1.305</td><td class="hm-s4">1.297</td><td class="hm-s4">1.300</td><td class="hm-s4">1.285</td><td class="hm-s5">1.272</td><td class="hm-s5">1.268</td><td class="hm-s5">1.244</td><td class="hm-s5">1.237</td><td class="hm-s5">1.235</td><td class="hm-s5">1.252</td></tr><tr><th class="eh-rowlabel">2100</th><td class="hm-s2">1.436</td><td class="hm-s3">1.361</td><td class="hm-s4">1.347</td><td class="hm-s4">1.333</td><td class="hm-s4">1.325</td><td class="hm-s4">1.299</td><td class="hm-s4">1.296</td><td class="hm-s5">1.280</td><td class="hm-s5">1.268</td><td class="hm-s5">1.266</td><td class="hm-s5">1.269</td><td class="hm-s5">1.262</td><td class="hm-s5">1.241</td><td class="hm-s5">1.231</td><td class="hm-s5">1.227</td><td class="hm-s5">1.239</td></tr><tr><th class="eh-rowlabel">2200</th><td class="hm-s2">1.437</td><td class="hm-s3">1.360</td><td class="hm-s4">1.350</td><td class="hm-s4">1.323</td><td class="hm-s4">1.318</td><td class="hm-s4">1.321</td><td class="hm-s5">1.279</td><td class="hm-s5">1.271</td><td class="hm-s5">1.259</td><td class="hm-s5">1.260</td><td class="hm-s5">1.243</td><td class="hm-s5">1.247</td><td class="hm-s5">1.245</td><td class="hm-s5">1.233</td><td class="hm-s5">1.216</td><td class="hm-s5">1.227</td></tr><tr><th class="eh-rowlabel">2300</th><td class="hm-s2">1.472</td><td class="hm-s3">1.368</td><td class="hm-s4">1.345</td><td class="hm-s4">1.334</td><td class="hm-s4">1.303</td><td class="hm-s4">1.313</td><td class="hm-s4">1.289</td><td class="hm-s5">1.263</td><td class="hm-s5">1.253</td><td class="hm-s5">1.246</td><td class="hm-s5">1.241</td><td class="hm-s5">1.234</td><td class="hm-s5">1.231</td><td class="hm-s5">1.223</td><td class="hm-s5">1.215</td><td class="hm-s5">1.215</td></tr><tr><th class="eh-rowlabel">2400</th><td class="hm-s3">1.415</td><td class="hm-s3">1.383</td><td class="hm-s4">1.336</td><td class="hm-s4">1.306</td><td class="hm-s4">1.302</td><td class="hm-s4">1.303</td><td class="hm-s5">1.268</td><td class="hm-s5">1.246</td><td class="hm-s5">1.248</td><td class="hm-s5">1.238</td><td class="hm-s5">1.238</td><td class="hm-s5">1.239</td><td class="hm-s5">1.218</td><td class="hm-s5">1.217</td><td class="hm-s5">1.222</td><td class="hm-s5">1.214</td></tr><tr><th class="eh-rowlabel">2500</th><td class="hm-s3">1.412</td><td class="hm-s3">1.358</td><td class="hm-s4">1.344</td><td class="hm-s4">1.325</td><td class="hm-s4">1.302</td><td class="hm-s4">1.345</td><td class="hm-s4">1.282</td><td class="hm-s5">1.262</td><td class="hm-s5">1.257</td><td class="hm-s5">1.248</td><td class="hm-s5">1.241</td><td class="hm-s5">1.237</td><td class="hm-s5">1.232</td><td class="hm-s5">1.224</td><td class="hm-s5">1.211</td><td class="hm-s5">1.267</td></tr></tbody>
+</table>
+</div>
+
+        <figcaption><strong>A3</strong>: Mean cross-entropy loss in nats, 16&#215;16 rating grid. Darker is lower loss.</figcaption>
+    </figure>
+
+    <h3 id="appendix-strength-grids">Playing strength, in full</h3>
+    <!-- source: eval-suite-20260525T115018Z / stockfish_play (matched) -->
+    <p>The <a href="#how-strength">playing-strength</a> figures in the main text show one slice: <strong>rapid</strong> games, told who's playing, scored for the model (win = 1, draw = &frac12;). The model is conditioned on the time control too, so the same experiment was run for <strong>blitz</strong>. Below are the complete grids (every conditioned rating against every Stockfish level, 128 games per cell) for blitz as raw score (<a href="#fig-c1">C1</a>), and for both time controls converted to a Glicko performance rating (<a href="#fig-c2">C2</a>, <a href="#fig-c3">C3</a>). The rapid score grid is the one in <em>The whole strength grid</em> above.</p>
+    <p>A warning on the rating grids. Against a single fixed opponent a performance rating is just the cell's score re-expressed on the Elo scale, so it is dominated by <em>which</em> opponent was played: scoring 10% against a 3099-rated Stockfish still rates around 2700, because that result <em>is</em> a 2700-level result by the Elo formula. It does <strong>not</strong> mean the model plays at 2700 strength while losing nine games in ten. Read each column as "how the model performs against <em>this</em> opponent," not as one number for the model; their disagreement across a row (about 1900 against the weak levels, about 2700 against the strong ones) is exactly why no single Glicko rating is more than a rough summary. And as everywhere in this section, these are estimates against Stockfish, whose move distribution is not human. See <a href="#comparison">the caveats above</a>. The &plusmn; is one standard error on the scores and the Glicko rating deviation on the ratings.</p>
+
+    <figure id="fig-c1">
+        <div class="table-wrapper">
+            <table class="eval-heatmap">
+                <thead>
+                    <tr>
+                        <th class="eh-corner">conditioned<br>rating &darr;</th>
+                        <th>SF&nbsp;1347</th>
+                        <th>SF&nbsp;1729</th>
+                        <th>SF&nbsp;2518</th>
+                        <th>SF&nbsp;2851</th>
+                        <th>SF&nbsp;3099</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><th class="eh-rowlabel">2400</th><td class="hm-90">96.1<span class="hm-se">&plusmn;1.7</span></td><td class="hm-60">69.5<span class="hm-se">&plusmn;4.1</span></td><td class="hm-40">48.4<span class="hm-se">&plusmn;4.4</span></td><td class="hm-10">18.0<span class="hm-se">&plusmn;3.4</span></td><td class="hm-0">9.0<span class="hm-se">&plusmn;2.5</span></td></tr>
+                    <tr><th class="eh-rowlabel">2200</th><td class="hm-90">98.0<span class="hm-se">&plusmn;1.2</span></td><td class="hm-60">66.8<span class="hm-se">&plusmn;4.2</span></td><td class="hm-40">46.1<span class="hm-se">&plusmn;4.4</span></td><td class="hm-10">18.8<span class="hm-se">&plusmn;3.4</span></td><td class="hm-10">12.5<span class="hm-se">&plusmn;2.9</span></td></tr>
+                    <tr><th class="eh-rowlabel">2000</th><td class="hm-90">95.7<span class="hm-se">&plusmn;1.8</span></td><td class="hm-60">69.9<span class="hm-se">&plusmn;4.1</span></td><td class="hm-40">42.2<span class="hm-se">&plusmn;4.4</span></td><td class="hm-20">23.8<span class="hm-se">&plusmn;3.8</span></td><td class="hm-10">11.3<span class="hm-se">&plusmn;2.8</span></td></tr>
+                    <tr><th class="eh-rowlabel">1800</th><td class="hm-90">93.8<span class="hm-se">&plusmn;2.1</span></td><td class="hm-60">66.0<span class="hm-se">&plusmn;4.2</span></td><td class="hm-40">47.3<span class="hm-se">&plusmn;4.4</span></td><td class="hm-20">20.7<span class="hm-se">&plusmn;3.6</span></td><td class="hm-10">10.2<span class="hm-se">&plusmn;2.7</span></td></tr>
+                    <tr><th class="eh-rowlabel">1600</th><td class="hm-90">93.8<span class="hm-se">&plusmn;2.1</span></td><td class="hm-60">61.3<span class="hm-se">&plusmn;4.3</span></td><td class="hm-30">39.5<span class="hm-se">&plusmn;4.3</span></td><td class="hm-10">19.1<span class="hm-se">&plusmn;3.5</span></td><td class="hm-10">14.1<span class="hm-se">&plusmn;3.1</span></td></tr>
+                    <tr><th class="eh-rowlabel">1400</th><td class="hm-80">89.5<span class="hm-se">&plusmn;2.7</span></td><td class="hm-40">46.9<span class="hm-se">&plusmn;4.4</span></td><td class="hm-40">40.2<span class="hm-se">&plusmn;4.3</span></td><td class="hm-20">23.0<span class="hm-se">&plusmn;3.7</span></td><td class="hm-0">7.8<span class="hm-se">&plusmn;2.4</span></td></tr>
+                    <tr><th class="eh-rowlabel">1200</th><td class="hm-80">85.5<span class="hm-se">&plusmn;3.1</span></td><td class="hm-40">45.3<span class="hm-se">&plusmn;4.4</span></td><td class="hm-30">32.8<span class="hm-se">&plusmn;4.2</span></td><td class="hm-10">18.8<span class="hm-se">&plusmn;3.4</span></td><td class="hm-10">10.9<span class="hm-se">&plusmn;2.8</span></td></tr>
+                    <tr><th class="eh-rowlabel">1000</th><td class="hm-70">77.0<span class="hm-se">&plusmn;3.7</span></td><td class="hm-40">44.1<span class="hm-se">&plusmn;4.4</span></td><td class="hm-20">29.3<span class="hm-se">&plusmn;4.0</span></td><td class="hm-10">18.8<span class="hm-se">&plusmn;3.4</span></td><td class="hm-10">10.9<span class="hm-se">&plusmn;2.8</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <figcaption><strong>C1</strong>: Model score (%) in <strong>blitz</strong> games, every conditioned rating against every Stockfish level, &plusmn; one standard error over 128 games per cell. Same palette as the rapid grid above.</figcaption>
+    </figure>
+
+    <figure id="fig-c2">
+        <div class="table-wrapper">
+            <table class="eval-heatmap">
+                <thead>
+                    <tr>
+                        <th class="eh-corner">conditioned<br>rating &darr;</th>
+                        <th>SF&nbsp;1347</th>
+                        <th>SF&nbsp;1729</th>
+                        <th>SF&nbsp;2518</th>
+                        <th>SF&nbsp;2851</th>
+                        <th>SF&nbsp;3099</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><th class="eh-rowlabel">2400</th><td class="hm-plain">1834<span class="hm-se">&plusmn;53</span></td><td class="hm-plain">1881<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2424<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2598<span class="hm-se">&plusmn;39</span></td><td class="hm-plain">2739<span class="hm-se">&plusmn;58</span></td></tr>
+                    <tr><th class="eh-rowlabel">2200</th><td class="hm-plain">1908<span class="hm-se">&plusmn;68</span></td><td class="hm-plain">1881<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2499<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2545<span class="hm-se">&plusmn;44</span></td><td class="hm-plain">2695<span class="hm-se">&plusmn;56</span></td></tr>
+                    <tr><th class="eh-rowlabel">2000</th><td class="hm-plain">1840<span class="hm-se">&plusmn;59</span></td><td class="hm-plain">1866<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2441<span class="hm-se">&plusmn;32</span></td><td class="hm-plain">2610<span class="hm-se">&plusmn;41</span></td><td class="hm-plain">2754<span class="hm-se">&plusmn;49</span></td></tr>
+                    <tr><th class="eh-rowlabel">1800</th><td class="hm-plain">1788<span class="hm-se">&plusmn;52</span></td><td class="hm-plain">1810<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2451<span class="hm-se">&plusmn;32</span></td><td class="hm-plain">2622<span class="hm-se">&plusmn;39</span></td><td class="hm-plain">2652<span class="hm-se">&plusmn;70</span></td></tr>
+                    <tr><th class="eh-rowlabel">1600</th><td class="hm-plain">1744<span class="hm-se">&plusmn;49</span></td><td class="hm-plain">1762<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2429<span class="hm-se">&plusmn;34</span></td><td class="hm-plain">2579<span class="hm-se">&plusmn;39</span></td><td class="hm-plain">2755<span class="hm-se">&plusmn;46</span></td></tr>
+                    <tr><th class="eh-rowlabel">1400</th><td class="hm-plain">1686<span class="hm-se">&plusmn;46</span></td><td class="hm-plain">1809<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2417<span class="hm-se">&plusmn;34</span></td><td class="hm-plain">2565<span class="hm-se">&plusmn;47</span></td><td class="hm-plain">2720<span class="hm-se">&plusmn;54</span></td></tr>
+                    <tr><th class="eh-rowlabel">1200</th><td class="hm-plain">1618<span class="hm-se">&plusmn;43</span></td><td class="hm-plain">1670<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2383<span class="hm-se">&plusmn;34</span></td><td class="hm-plain">2545<span class="hm-se">&plusmn;45</span></td><td class="hm-plain">2772<span class="hm-se">&plusmn;52</span></td></tr>
+                    <tr><th class="eh-rowlabel">1000</th><td class="hm-plain">1564<span class="hm-se">&plusmn;37</span></td><td class="hm-plain">1640<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2394<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2533<span class="hm-se">&plusmn;47</span></td><td class="hm-plain">2683<span class="hm-se">&plusmn;53</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <figcaption><strong>C2</strong>: The same <strong>rapid</strong> games as the main grid, each cell converted to a Glicko performance rating &plusmn; its rating deviation. Note how each column is pinned near its opponent's rating. The conditioning barely moves it against the strong levels.</figcaption>
+    </figure>
+
+    <figure id="fig-c3">
+        <div class="table-wrapper">
+            <table class="eval-heatmap">
+                <thead>
+                    <tr>
+                        <th class="eh-corner">conditioned<br>rating &darr;</th>
+                        <th>SF&nbsp;1347</th>
+                        <th>SF&nbsp;1729</th>
+                        <th>SF&nbsp;2518</th>
+                        <th>SF&nbsp;2851</th>
+                        <th>SF&nbsp;3099</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><th class="eh-rowlabel">2400</th><td class="hm-plain">1853<span class="hm-se">&plusmn;57</span></td><td class="hm-plain">1868<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2505<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2586<span class="hm-se">&plusmn;40</span></td><td class="hm-plain">2694<span class="hm-se">&plusmn;60</span></td></tr>
+                    <tr><th class="eh-rowlabel">2200</th><td class="hm-plain">1944<span class="hm-se">&plusmn;78</span></td><td class="hm-plain">1847<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2491<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2592<span class="hm-se">&plusmn;41</span></td><td class="hm-plain">2768<span class="hm-se">&plusmn;52</span></td></tr>
+                    <tr><th class="eh-rowlabel">2000</th><td class="hm-plain">1856<span class="hm-se">&plusmn;68</span></td><td class="hm-plain">1869<span class="hm-se">&plusmn;35</span></td><td class="hm-plain">2471<span class="hm-se">&plusmn;32</span></td><td class="hm-plain">2646<span class="hm-se">&plusmn;35</span></td><td class="hm-plain">2736<span class="hm-se">&plusmn;49</span></td></tr>
+                    <tr><th class="eh-rowlabel">1800</th><td class="hm-plain">1796<span class="hm-se">&plusmn;55</span></td><td class="hm-plain">1840<span class="hm-se">&plusmn;34</span></td><td class="hm-plain">2495<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2630<span class="hm-se">&plusmn;41</span></td><td class="hm-plain">2715<span class="hm-se">&plusmn;53</span></td></tr>
+                    <tr><th class="eh-rowlabel">1600</th><td class="hm-plain">1797<span class="hm-se">&plusmn;54</span></td><td class="hm-plain">1801<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2458<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2607<span class="hm-se">&plusmn;38</span></td><td class="hm-plain">2785<span class="hm-se">&plusmn;43</span></td></tr>
+                    <tr><th class="eh-rowlabel">1400</th><td class="hm-plain">1694<span class="hm-se">&plusmn;42</span></td><td class="hm-plain">1706<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2449<span class="hm-se">&plusmn;32</span></td><td class="hm-plain">2637<span class="hm-se">&plusmn;37</span></td><td class="hm-plain">2668<span class="hm-se">&plusmn;62</span></td></tr>
+                    <tr><th class="eh-rowlabel">1200</th><td class="hm-plain">1640<span class="hm-se">&plusmn;38</span></td><td class="hm-plain">1695<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2400<span class="hm-se">&plusmn;33</span></td><td class="hm-plain">2598<span class="hm-se">&plusmn;41</span></td><td class="hm-plain">2728<span class="hm-se">&plusmn;49</span></td></tr>
+                    <tr><th class="eh-rowlabel">1000</th><td class="hm-plain">1548<span class="hm-se">&plusmn;38</span></td><td class="hm-plain">1688<span class="hm-se">&plusmn;31</span></td><td class="hm-plain">2374<span class="hm-se">&plusmn;35</span></td><td class="hm-plain">2605<span class="hm-se">&plusmn;41</span></td><td class="hm-plain">2726<span class="hm-se">&plusmn;49</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <figcaption><strong>C3</strong>: The same conversion for <strong>blitz</strong> games: Glicko performance rating &plusmn; rating deviation, 128 games per cell.</figcaption>
+    </figure>
+
+    <p>The score grids fold wins and draws into one number. Splitting them apart is where one result stands out: <strong>the model beats even the strongest engines outright, if rarely</strong>. Against the 3099-rated level (the top rung of the ladder) it won <strong>12</strong> of the 2,048 games it played there (and drew 411 more); against the 2851-rated level, 50 wins and 655 draws. Beating a Stockfish of that strength even once, with a single greedy forward pass and no search, is the kind of thing this project had no right to expect; you can find those wins as the lone coloured digits in the right-hand columns below. The full wins&nbsp;/&nbsp;draws&nbsp;/&nbsp;losses split, 128 games per cell, told who's playing:</p>
+
+    <figure id="fig-c4">
+        <div class="table-wrapper">
+            <table class="eval-heatmap">
+                <thead>
+                    <tr>
+                        <th class="eh-corner">conditioned<br>rating &darr;</th>
+                        <th>SF&nbsp;1347</th>
+                        <th>SF&nbsp;1729</th>
+                        <th>SF&nbsp;2518</th>
+                        <th>SF&nbsp;2851</th>
+                        <th>SF&nbsp;3099</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><th class="eh-rowlabel">2400</th><td class="hm-plain wdl"><span class="wdl-w">121</span> / 4 / <span class="wdl-l">3</span></td><td class="hm-plain wdl"><span class="wdl-w">78</span> / 26 / <span class="wdl-l">24</span></td><td class="hm-plain wdl"><span class="wdl-w">23</span> / 48 / <span class="wdl-l">57</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 44 / <span class="wdl-l">81</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 26 / <span class="wdl-l">101</span></td></tr>
+                    <tr><th class="eh-rowlabel">2200</th><td class="hm-plain wdl"><span class="wdl-w">123</span> / 3 / <span class="wdl-l">2</span></td><td class="hm-plain wdl"><span class="wdl-w">78</span> / 26 / <span class="wdl-l">24</span></td><td class="hm-plain wdl"><span class="wdl-w">36</span> / 49 / <span class="wdl-l">43</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 33 / <span class="wdl-l">92</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 21 / <span class="wdl-l">106</span></td></tr>
+                    <tr><th class="eh-rowlabel">2000</th><td class="hm-plain wdl"><span class="wdl-w">119</span> / 6 / <span class="wdl-l">3</span></td><td class="hm-plain wdl"><span class="wdl-w">79</span> / 19 / <span class="wdl-l">30</span></td><td class="hm-plain wdl"><span class="wdl-w">25</span> / 50 / <span class="wdl-l">53</span></td><td class="hm-plain wdl"><span class="wdl-w">5</span> / 39 / <span class="wdl-l">84</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 31 / <span class="wdl-l">96</span></td></tr>
+                    <tr><th class="eh-rowlabel">1800</th><td class="hm-plain wdl"><span class="wdl-w">117</span> / 6 / <span class="wdl-l">5</span></td><td class="hm-plain wdl"><span class="wdl-w">69</span> / 20 / <span class="wdl-l">39</span></td><td class="hm-plain wdl"><span class="wdl-w">25</span> / 50 / <span class="wdl-l">53</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 45 / <span class="wdl-l">80</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 16 / <span class="wdl-l">111</span></td></tr>
+                    <tr><th class="eh-rowlabel">1600</th><td class="hm-plain wdl"><span class="wdl-w">113</span> / 8 / <span class="wdl-l">7</span></td><td class="hm-plain wdl"><span class="wdl-w">51</span> / 39 / <span class="wdl-l">38</span></td><td class="hm-plain wdl"><span class="wdl-w">21</span> / 49 / <span class="wdl-l">58</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 37 / <span class="wdl-l">88</span></td><td class="hm-plain wdl"><span class="wdl-w">0</span> / 31 / <span class="wdl-l">97</span></td></tr>
+                    <tr><th class="eh-rowlabel">1400</th><td class="hm-plain wdl"><span class="wdl-w">107</span> / 11 / <span class="wdl-l">10</span></td><td class="hm-plain wdl"><span class="wdl-w">66</span> / 27 / <span class="wdl-l">35</span></td><td class="hm-plain wdl"><span class="wdl-w">18</span> / 53 / <span class="wdl-l">57</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 37 / <span class="wdl-l">90</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 24 / <span class="wdl-l">103</span></td></tr>
+                    <tr><th class="eh-rowlabel">1200</th><td class="hm-plain wdl"><span class="wdl-w">99</span> / 16 / <span class="wdl-l">13</span></td><td class="hm-plain wdl"><span class="wdl-w">32</span> / 43 / <span class="wdl-l">53</span></td><td class="hm-plain wdl"><span class="wdl-w">19</span> / 42 / <span class="wdl-l">67</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 31 / <span class="wdl-l">94</span></td><td class="hm-plain wdl"><span class="wdl-w">0</span> / 31 / <span class="wdl-l">97</span></td></tr>
+                    <tr><th class="eh-rowlabel">1000</th><td class="hm-plain wdl"><span class="wdl-w">95</span> / 10 / <span class="wdl-l">23</span></td><td class="hm-plain wdl"><span class="wdl-w">28</span> / 40 / <span class="wdl-l">60</span></td><td class="hm-plain wdl"><span class="wdl-w">16</span> / 52 / <span class="wdl-l">60</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 33 / <span class="wdl-l">94</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 21 / <span class="wdl-l">106</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <figcaption><strong>C4</strong>: Wins&nbsp;/&nbsp;draws&nbsp;/&nbsp;losses in <strong>rapid</strong> games, every conditioned rating against every Stockfish level, 128 games per cell. Wins are coloured. Summing the right-hand column: six rapid wins against the 3099-rated level.</figcaption>
+    </figure>
+
+    <figure id="fig-c5">
+        <div class="table-wrapper">
+            <table class="eval-heatmap">
+                <thead>
+                    <tr>
+                        <th class="eh-corner">conditioned<br>rating &darr;</th>
+                        <th>SF&nbsp;1347</th>
+                        <th>SF&nbsp;1729</th>
+                        <th>SF&nbsp;2518</th>
+                        <th>SF&nbsp;2851</th>
+                        <th>SF&nbsp;3099</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><th class="eh-rowlabel">2400</th><td class="hm-plain wdl"><span class="wdl-w">120</span> / 6 / <span class="wdl-l">2</span></td><td class="hm-plain wdl"><span class="wdl-w">75</span> / 28 / <span class="wdl-l">25</span></td><td class="hm-plain wdl"><span class="wdl-w">44</span> / 36 / <span class="wdl-l">48</span></td><td class="hm-plain wdl"><span class="wdl-w">5</span> / 36 / <span class="wdl-l">87</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 21 / <span class="wdl-l">106</span></td></tr>
+                    <tr><th class="eh-rowlabel">2200</th><td class="hm-plain wdl"><span class="wdl-w">124</span> / 3 / <span class="wdl-l">1</span></td><td class="hm-plain wdl"><span class="wdl-w">73</span> / 25 / <span class="wdl-l">30</span></td><td class="hm-plain wdl"><span class="wdl-w">39</span> / 40 / <span class="wdl-l">49</span></td><td class="hm-plain wdl"><span class="wdl-w">2</span> / 44 / <span class="wdl-l">82</span></td><td class="hm-plain wdl"><span class="wdl-w">0</span> / 32 / <span class="wdl-l">96</span></td></tr>
+                    <tr><th class="eh-rowlabel">2000</th><td class="hm-plain wdl"><span class="wdl-w">122</span> / 1 / <span class="wdl-l">5</span></td><td class="hm-plain wdl"><span class="wdl-w">77</span> / 25 / <span class="wdl-l">26</span></td><td class="hm-plain wdl"><span class="wdl-w">33</span> / 42 / <span class="wdl-l">53</span></td><td class="hm-plain wdl"><span class="wdl-w">7</span> / 47 / <span class="wdl-l">74</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 27 / <span class="wdl-l">100</span></td></tr>
+                    <tr><th class="eh-rowlabel">1800</th><td class="hm-plain wdl"><span class="wdl-w">118</span> / 4 / <span class="wdl-l">6</span></td><td class="hm-plain wdl"><span class="wdl-w">72</span> / 25 / <span class="wdl-l">31</span></td><td class="hm-plain wdl"><span class="wdl-w">30</span> / 61 / <span class="wdl-l">37</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 47 / <span class="wdl-l">78</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 24 / <span class="wdl-l">103</span></td></tr>
+                    <tr><th class="eh-rowlabel">1600</th><td class="hm-plain wdl"><span class="wdl-w">117</span> / 6 / <span class="wdl-l">5</span></td><td class="hm-plain wdl"><span class="wdl-w">62</span> / 33 / <span class="wdl-l">33</span></td><td class="hm-plain wdl"><span class="wdl-w">30</span> / 41 / <span class="wdl-l">57</span></td><td class="hm-plain wdl"><span class="wdl-w">2</span> / 45 / <span class="wdl-l">81</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 34 / <span class="wdl-l">93</span></td></tr>
+                    <tr><th class="eh-rowlabel">1400</th><td class="hm-plain wdl"><span class="wdl-w">110</span> / 9 / <span class="wdl-l">9</span></td><td class="hm-plain wdl"><span class="wdl-w">45</span> / 30 / <span class="wdl-l">53</span></td><td class="hm-plain wdl"><span class="wdl-w">24</span> / 55 / <span class="wdl-l">49</span></td><td class="hm-plain wdl"><span class="wdl-w">5</span> / 49 / <span class="wdl-l">74</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 18 / <span class="wdl-l">109</span></td></tr>
+                    <tr><th class="eh-rowlabel">1200</th><td class="hm-plain wdl"><span class="wdl-w">104</span> / 11 / <span class="wdl-l">13</span></td><td class="hm-plain wdl"><span class="wdl-w">37</span> / 42 / <span class="wdl-l">49</span></td><td class="hm-plain wdl"><span class="wdl-w">21</span> / 42 / <span class="wdl-l">65</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 46 / <span class="wdl-l">81</span></td><td class="hm-plain wdl"><span class="wdl-w">1</span> / 26 / <span class="wdl-l">101</span></td></tr>
+                    <tr><th class="eh-rowlabel">1000</th><td class="hm-plain wdl"><span class="wdl-w">88</span> / 21 / <span class="wdl-l">19</span></td><td class="hm-plain wdl"><span class="wdl-w">39</span> / 35 / <span class="wdl-l">54</span></td><td class="hm-plain wdl"><span class="wdl-w">17</span> / 41 / <span class="wdl-l">70</span></td><td class="hm-plain wdl"><span class="wdl-w">3</span> / 42 / <span class="wdl-l">83</span></td><td class="hm-plain wdl"><span class="wdl-w">0</span> / 28 / <span class="wdl-l">100</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <figcaption><strong>C5</strong>: Wins&nbsp;/&nbsp;draws&nbsp;/&nbsp;losses in <strong>blitz</strong> games, 128 per cell. Six more wins against the 3099-rated level, twelve in all across the two time controls.</figcaption>
+    </figure>
+
+    <h3 id="appendix-move-types">Constrained moves are the easy ones</h3>
+    <p>The 56% average is not uniform. The more constrained the move, the better the model guesses it. Forced and near-forced moves are far more predictable than a free choice in the middlegame:</p>
+
+    <div class="bar-chart" aria-label="Human move-match accuracy by move type">
+        <div class="bar-row"><span class="bar-label">All moves</span><div class="bar-track"><div class="bar-fill" style="width:56.04%"></div></div><span class="bar-value">56.0%</span></div>
+        <div class="bar-row"><span class="bar-label">Castling</span><div class="bar-track"><div class="bar-fill" style="width:73.35%"></div></div><span class="bar-value">73.4%</span></div>
+        <div class="bar-row"><span class="bar-label">En passant</span><div class="bar-track"><div class="bar-fill" style="width:74.49%"></div></div><span class="bar-value">74.5%</span></div>
+        <div class="bar-row"><span class="bar-label">Pawn promotion</span><div class="bar-track"><div class="bar-fill" style="width:87.72%"></div></div><span class="bar-value">87.7%</span></div>
+        <div class="bar-row"><span class="bar-label">Repetition draw</span><div class="bar-track"><div class="bar-fill" style="width:94.93%"></div></div><span class="bar-value">94.9%</span></div>
+    </div>
+    <p class="diagram-caption">Move-match by move type on the Allie set. Promotions and repetition draws are nearly forced; the model predicts them far more often than an average move.</p>
+
+    <h3 id="appendix-benchmark-reproductions">Benchmark reproductions</h3>
+    <!-- source: eval-suite-20260525T115018Z / maia, allie_benchmark -->
+    <p>The comparisons in this post are pulled from a larger evaluation suite that reproduces specific tables and figures from the Maia-2, Maia-3 and Allie papers as exactly as the released data allows. This appendix lists each reproduced artifact, the exact paper table or figure it maps to, and a compatibility status: <strong>paper-compatible</strong> (exact paper inputs, denominators and metric semantics), <strong>method-compatible</strong> (regenerated by the paper's own method where exact rows are not public), or <strong>blocked</strong> (a required paper input is unavailable, so the artifact is left unreproduced rather than approximated). Every figure below is our model told the real metadata; values quoted from the source papers are labelled as such and were not recomputed.</p>
+
+    <h4 id="fig-b1">B1. Maia-2 Table 1: move-prediction accuracy</h4>
+    <p>Reproduces <a href="https://arxiv.org/abs/2409.20553">Maia-2</a> <strong>Table 1</strong>: top-1 move-prediction accuracy on the Maia-1 Testset, grouped Skilled / Advanced / Master with <em>Avg</em> the macro-averaged result (groups per Maia-2 &sect;4.1). <strong>Status: paper-compatible</strong>, scored on the exact 106,740-row test set (Skilled 56,812, Advanced 41,747, Master 8,181). Our row is computed; the Maia-2 row is quoted verbatim from Maia-2 Table 1 and was not recomputed.</p>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th>Model</th><th>Skilled</th><th>Advanced</th><th>Master</th><th>Avg</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Maia-2</td><td>51.72</td><td>54.15</td><td>53.87</td><td>53.25</td></tr>
+                <tr><td><strong>Ours</strong></td><td><strong>56.56</strong></td><td><strong>59.04</strong></td><td><strong>60.15</strong></td><td><strong>58.59</strong></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="diagram-caption">Cells are top-1 move-prediction accuracy (%); <strong>bold</strong> marks the best model in each column. The Maia-2 row is quoted verbatim from Maia-2 Table 1; only our row is computed.</p>
+
+    <h4 id="fig-b2">B2. Maia-2 Figure 2: cross-skill grid</h4>
+    <!-- source: eval-suite-20260525T115018Z / maia ; delta vs Maia-2 Figure 2 printed per-cell values -->
+    <p>Reproduces <a href="https://arxiv.org/abs/2409.20553">Maia-2</a> <strong>Figure 2</strong>: move-match as a function of the active player's rating (rows) and the opponent's rating (columns). <strong>Status: method-compatible</strong>: Maia-2 does not release the row-level cross-skill set, so it is regenerated from December 2023 Lichess rapid games (~4.93M scored positions), with per-cell counts targeted to <strong>Maia-2 Appendix Table 8</strong>. Move-match rises as either player gets stronger, with the active player's own rating the larger lever, the same surface Maia-2 reports.</p>
+    <div class="eval-heatmap-wrap">
+<table class="eval-heatmap elo-heatmap">
+  <thead>
+    <tr>
+      <th class="eh-corner">active&nbsp;&darr;<br>opponent&nbsp;&rarr;</th><th>1100</th><th>1200</th><th>1300</th><th>1400</th><th>1500</th><th>1600</th><th>1700</th><th>1800</th><th>2000+</th></tr>
+  </thead>
+  <tbody><tr><th class="eh-rowlabel">1100</th><td class="hm-s0">55.7</td><td class="hm-s0">55.9</td><td class="hm-s0">55.1</td><td class="hm-s0">54.8</td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1200</th><td class="hm-s1">56.7</td><td class="hm-s1">56.5</td><td class="hm-s1">56.4</td><td class="hm-s0">55.9</td><td class="hm-s1">55.9</td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1300</th><td class="hm-s2">57.5</td><td class="hm-s2">57.3</td><td class="hm-s2">57.2</td><td class="hm-s1">57.1</td><td class="hm-s1">56.4</td><td class="hm-s1">56.3</td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1400</th><td class="hm-s3">58.9</td><td class="hm-s2">58.2</td><td class="hm-s2">57.9</td><td class="hm-s2">57.7</td><td class="hm-s2">57.4</td><td class="hm-s2">57.4</td><td class="hm-s1">56.7</td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1500</th><td class="hm-sna"></td><td class="hm-s2">57.6</td><td class="hm-s2">57.4</td><td class="hm-s2">58.0</td><td class="hm-s2">57.9</td><td class="hm-s2">57.8</td><td class="hm-s1">56.9</td><td class="hm-s1">56.4</td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1600</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s4">59.7</td><td class="hm-s4">59.6</td><td class="hm-s3">58.9</td><td class="hm-s3">58.6</td><td class="hm-s2">58.2</td><td class="hm-s2">58.0</td><td class="hm-s1">57.1</td></tr><tr><th class="eh-rowlabel">1700</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s4">60.1</td><td class="hm-s4">60.0</td><td class="hm-s3">59.0</td><td class="hm-s3">58.8</td><td class="hm-s3">58.5</td><td class="hm-s2">57.7</td></tr><tr><th class="eh-rowlabel">1800</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s4">60.5</td><td class="hm-s5">60.6</td><td class="hm-s3">59.1</td><td class="hm-s3">59.2</td><td class="hm-s3">58.6</td></tr><tr><th class="eh-rowlabel">2000+</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s5">61.8</td><td class="hm-s5">61.5</td><td class="hm-s5">61.0</td><td class="hm-s4">59.6</td></tr></tbody>
+</table>
+</div>
+
+    <p class="diagram-caption">Our cross-skill move-match (%), ~4.93M positions; blank cells are rating pairs more than three bins (&approx;300 points) apart, which the benchmark band does not cover.</p>
+    <p>The same grid as a <strong>delta against Maia-2's Figure 2</strong>: our move-match minus the value Maia-2 prints in each Figure 2 cell, in percentage points. Maia-2 draws Figure 2 on a finer ten-bin rating axis (1900 and 2000+ split apart) than the nine-bin Appendix Table 8 scheme our eval used, so the delta is shown only where the bins coincide exactly: both players rated 1800 or below (44 cells). The 2000+ row and column are left blank rather than compared across mismatched bins. We lead Maia-2 in every comparable cell, by roughly four to five points.</p>
+    <div class="eval-heatmap-wrap">
+<table class="eval-heatmap elo-heatmap">
+  <thead>
+    <tr>
+      <th class="eh-corner">active&nbsp;&darr;<br>opponent&nbsp;&rarr;</th><th>1100</th><th>1200</th><th>1300</th><th>1400</th><th>1500</th><th>1600</th><th>1700</th><th>1800</th><th>2000+</th></tr>
+  </thead>
+  <tbody><tr><th class="eh-rowlabel">1100</th><td class="hm-s2">+4.5</td><td class="hm-s2">+4.5</td><td class="hm-s3">+4.9</td><td class="hm-s3">+4.8</td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1200</th><td class="hm-s2">+4.6</td><td class="hm-s2">+4.5</td><td class="hm-s0">+4.2</td><td class="hm-s5">+5.3</td><td class="hm-s3">+4.8</td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1300</th><td class="hm-s4">+5.1</td><td class="hm-s1">+4.4</td><td class="hm-s2">+4.6</td><td class="hm-s1">+4.3</td><td class="hm-s3">+4.9</td><td class="hm-s5">+5.2</td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1400</th><td class="hm-s4">+5.0</td><td class="hm-s3">+4.9</td><td class="hm-s2">+4.5</td><td class="hm-s1">+4.3</td><td class="hm-s0">+4.0</td><td class="hm-s5">+5.3</td><td class="hm-s4">+5.1</td><td class="hm-sna"></td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1500</th><td class="hm-sna"></td><td class="hm-s5">+5.4</td><td class="hm-s4">+5.1</td><td class="hm-s3">+4.7</td><td class="hm-s3">+4.8</td><td class="hm-s3">+4.7</td><td class="hm-s3">+4.7</td><td class="hm-s3">+4.9</td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1600</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s3">+4.9</td><td class="hm-s4">+5.1</td><td class="hm-s3">+4.9</td><td class="hm-s3">+4.9</td><td class="hm-s3">+4.8</td><td class="hm-s4">+5.0</td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1700</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s4">+5.0</td><td class="hm-s5">+5.2</td><td class="hm-s3">+4.8</td><td class="hm-s4">+5.0</td><td class="hm-s5">+5.3</td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">1800</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-s3">+4.9</td><td class="hm-s5">+5.4</td><td class="hm-s3">+4.7</td><td class="hm-s3">+4.9</td><td class="hm-sna"></td></tr><tr><th class="eh-rowlabel">2000+</th><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td><td class="hm-sna"></td></tr></tbody>
+</table>
+</div>
+
+    <p class="diagram-caption">Ours &minus; Maia-2 Figure 2 move-match (percentage points, all positive); darker is a larger lead. Maia-2's per-cell numbers are read from the labels printed in its Figure 2; blank cells are either outside the benchmark band or in the &ge;1900 range where our nine-bin eval and Maia-2's ten-bin figure do not line up.</p>
+
+    <h4 id="fig-b3">B3. Maia-3 Table 1: move-match leaderboard</h4>
+    <p>Reproduces our row of <a href="https://arxiv.org/abs/2605.19091">Maia-3 (Chessformer)</a> <strong>Table 1</strong>: the top-1 human-move-match leaderboard on the 884,049-position Allie test set. <strong>Status: paper-compatible</strong> for our entry (move-match 56.04, scored locally); every other system in the leaderboard is quoted from Maia-3 Table 1 and was not recomputed. The full ranking, with our row in context, is in <a href="#comparison">How does it compare to the state of the art?</a></p>
+
+    <h4 id="fig-b4">B4. Allie Table 2: move legality</h4>
+    <p>Reproduces <a href="https://arxiv.org/abs/2410.03893">Allie</a> <strong>Table 2</strong> (&sect;5.1): the share of positions where the top-1 move is legal, on Lichess games and on random out-of-distribution positions, each also restricted to positions where the side to move is in check. <strong>Status:</strong> the Lichess rows are paper-compatible; the random rows are method-compatible, because Allie does not release its exact random positions (regenerated with seed 42). Allie's column is quoted from Allie Table 2 (reported there with 95% confidence intervals); ours is computed on Lichess 884,049, Lichess in check 63,844, Random 377,956 and Random in check 20,592 positions.</p>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th>Evaluation set</th><th>Allie</th><th>Ours</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Lichess</td><td><strong>100.0&plusmn;0.0</strong></td><td>99.98&plusmn;0.00</td></tr>
+                <tr><td>Lichess (under check)</td><td><strong>100.0&plusmn;0.0</strong></td><td>99.93&plusmn;0.02</td></tr>
+                <tr><td>Random</td><td><strong>99.9&plusmn;0.0</strong></td><td>99.83&plusmn;0.01</td></tr>
+                <tr><td>Random (under check)</td><td>96.6&plusmn;0.0</td><td><strong>99.42&plusmn;0.10</strong></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="diagram-caption">Cells are the paper's <em>Top-1 move is valid (%)</em>: the share of positions whose single most-likely move is legal (higher is better); <strong>bold</strong> marks the better model in each row. Allie's column is quoted from Allie Table 2; only our column is computed. &plusmn; values are 95% confidence intervals.</p>
+
+    <h4 id="fig-b5">B5. Allie Table 3: move-match by move type</h4>
+    <p>Reproduces <a href="https://arxiv.org/abs/2410.03893">Allie</a> <strong>Table 3</strong> (&sect;5.2): top-1 move-match across all moves and the special-move categories, comparing Allie-Policy, Maia&#8902; and GPT-3.5. <strong>Status: paper-compatible</strong>, on the same 884,049-position set. The Allie, Maia&#8902; and GPT-3.5 columns are quoted from Allie Table 3 (reported there with 95% confidence intervals); our column is computed. The same move-match figures appear in <em>Constrained moves are the easy ones</em> above.</p>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr><th>Human plays&hellip;</th><th>Allie-Policy</th><th>Maia&#8902;</th><th>GPT-3.5</th><th>Ours</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>All moves</td><td>55.7&plusmn;0.1</td><td>51.6&plusmn;0.1</td><td>53.7&plusmn;0.1</td><td><strong>56.0&plusmn;0.1</strong></td></tr>
+                <tr><td>Castling</td><td><strong>74.3&plusmn;0.5</strong></td><td>73.3&plusmn;0.6</td><td>72.4&plusmn;0.6</td><td>73.4&plusmn;0.6</td></tr>
+                <tr><td>En passant</td><td>70.4&plusmn;4.1</td><td>67.7&plusmn;4.2</td><td>71.4&plusmn;4.0</td><td><strong>74.5&plusmn;3.9</strong></td></tr>
+                <tr><td>Pawn promotion</td><td>86.9&plusmn;1.7</td><td>85.1&plusmn;1.8</td><td>86.0&plusmn;1.7</td><td><strong>87.7&plusmn;1.6</strong></td></tr>
+                <tr><td>Threefold repetition</td><td>92.0&plusmn;4.6</td><td>87.0&plusmn;5.7</td><td>92.8&plusmn;4.4</td><td><strong>94.9&plusmn;3.7</strong></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="diagram-caption">Cells are top-1 move-match accuracy (%); <strong>bold</strong> marks the best model in each row. Allie-Policy / Maia&#8902; / GPT-3.5 are quoted from Allie Table 3; only our column is computed. &plusmn; values are 95% confidence intervals.</p>
 
 </article>
 

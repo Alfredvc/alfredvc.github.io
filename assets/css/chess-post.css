@@ -1,0 +1,975 @@
+/* Diagram styles specific to the chess-as-autocomplete post. */
+
+/* On mobile, let the playable board go full-bleed, edge to edge with the
+   viewport. grid-column: full reaches the article padding edge, the negative
+   margin cancels the article's 1.5rem horizontal padding (article has
+   overflow-x: clip, so no horizontal scroll), and padding-inline: 0 drops the
+   widget's own internal side padding (the .chess-game-container class is added
+   to #chess-container itself, so this targets the same element). Desktop is
+   unaffected: the board widget caps itself at --ca-board-size. */
+@media (max-width: 768px) {
+    #chess-container {
+        grid-column: full;
+        margin-inline: -1.5rem;
+        padding-inline: 0;
+    }
+}
+
+/* TL;DR callout under the playable board */
+.post-tldr {
+    margin: 2rem 0;
+    padding: 1.25rem 1.5rem;
+    background: var(--color-blog-subtle-bg);
+    border-left: 4px solid var(--color-blog-accent);
+    border-radius: 4px;
+}
+
+.post-tldr-title {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-blog-meta);
+    margin-bottom: 0.6rem;
+}
+
+.post-tldr p {
+    margin: 0.5rem 0;
+}
+
+/* SAN move line */
+.san-line {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 1.05rem;
+    margin: 2rem 0;
+    padding: 1rem 1.5rem;
+    background: var(--color-blog-subtle-bg);
+    border-radius: 4px;
+}
+
+.san-num {
+    color: var(--color-blog-meta);
+}
+
+/* Keep each move number with its moves when the line wraps */
+.san-line .san-group {
+    white-space: nowrap;
+}
+
+.san-line .san-group + .san-group {
+    margin-left: 0.9em;
+}
+
+.san-move {
+    color: var(--color-blog-heading);
+    font-weight: 700;
+}
+
+/* SAN ambiguity: one move, several spellings */
+.san-ambiguity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem 1.5rem;
+    margin: 2rem auto 0.75rem;
+    padding: 1.5rem 1.75rem;
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid var(--color-blog-border);
+    border-radius: 14px;
+    background: var(--color-blog-subtle-bg);
+}
+
+.san-ambiguity-move {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.san-ambiguity-sub {
+    font-family: var(--font-sans, sans-serif);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-blog-meta);
+    text-align: center;
+}
+
+.san-ambiguity-arrow {
+    display: inline-block;
+    font-size: 1.5rem;
+    color: var(--color-blog-meta);
+    line-height: 1;
+}
+
+.san-ambiguity-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.san-ambiguity-list li {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.san-ambiguity-list .san-move {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 1rem;
+}
+
+.san-ambiguity-list .san-gloss {
+    color: var(--color-blog-meta);
+    font-size: 0.85rem;
+}
+
+/* Chess board diagram */
+.board-media {
+    max-width: 420px;
+    margin: 0 auto;
+}
+
+/* Annotated move table */
+.san-table th,
+.san-table td {
+    padding: 0.65rem 1rem;
+}
+
+.san-table .san-num-col {
+    width: 3rem;
+}
+
+.san-table td.san-num {
+    font-family: 'Monaco', 'Courier New', monospace;
+    vertical-align: top;
+}
+
+.san-table .san-move {
+    display: block;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 1rem;
+}
+
+.san-table .san-gloss {
+    display: block;
+    color: var(--color-blog-meta);
+    font-size: 0.85rem;
+    margin-top: 0.15rem;
+}
+
+.piece {
+    font-size: 1.15em;
+    line-height: 1;
+}
+
+.token .piece {
+    margin-right: 0.3em;
+}
+
+/* PGN syntax highlighting */
+.pgn pre code {
+    background: none;
+    padding: 0;
+    color: var(--color-blog-text);
+    font-size: inherit;
+}
+
+.pgn .pgn-br {
+    color: #767676;
+}
+
+.pgn .pgn-key {
+    color: #6c3483;
+    font-weight: 700;
+}
+
+.pgn .pgn-val {
+    color: var(--color-blog-heading);
+}
+
+.pgn .pgn-num {
+    color: #767676;
+}
+
+.pgn .pgn-result {
+    color: var(--color-blog-heading);
+    font-weight: 700;
+}
+
+/* Python syntax highlighting */
+.py pre code {
+    background: none;
+    padding: 0;
+    color: var(--color-blog-text);
+    font-size: inherit;
+}
+
+.py .tok-fn {
+    color: #2563eb;
+}
+
+.py .tok-arg {
+    color: #6c3483;
+}
+
+.py .tok-const {
+    color: #b45309;
+}
+
+/* 16-bit move encoding diagram */
+.bitfield {
+    display: flex;
+    gap: 6px;
+    margin: 1.75rem 0 0.5rem;
+}
+
+.bitfield + .bitfield {
+    margin-top: 0.5rem;
+}
+
+.bitfield .seg {
+    border-radius: 6px;
+    padding: 0.6rem 0.3rem 0.5rem;
+    text-align: center;
+    color: #fff;
+    min-width: 0;
+}
+
+.bitfield .bits {
+    display: block;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.12em;
+}
+
+.bitfield .seg-label {
+    display: block;
+    font-size: 0.7rem;
+    opacity: 0.92;
+    margin-top: 0.25rem;
+    line-height: 1.25;
+}
+
+.seg-type      { flex: 4; background: #8e44ad; }
+.seg-from-file { flex: 3; background: #0085c9; }
+.seg-from-rank { flex: 3; background: #0077c2; }
+.seg-to-file   { flex: 3; background: #1e8e4d; }
+.seg-to-rank   { flex: 3; background: #1e8449; }
+
+.diagram-caption {
+    text-align: center;
+    color: var(--color-blog-meta);
+    font-size: 0.92rem;
+    font-style: italic;
+    margin-bottom: 1.75rem;
+}
+
+.diagram-footnotes {
+    color: var(--color-blog-meta);
+    font-size: 0.8rem;
+    font-style: italic;
+    line-height: 1.55;
+    margin: 1rem 0 1.75rem;
+}
+
+.diagram-footnotes p {
+    margin: 0 0 0.5rem;
+}
+
+.diagram-footnotes ol {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+.diagram-footnotes li {
+    margin: 0.2rem 0;
+}
+
+/* Tokenized game strip */
+.token-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 1.75rem 0;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.token {
+    padding: 0.3rem 0.65rem;
+    border-radius: 6px;
+    background: var(--color-blog-subtle-bg);
+    border: 1px solid var(--color-blog-border);
+    color: var(--color-blog-text);
+    white-space: nowrap;
+}
+
+.token-special { background: #f3e8fd; border-color: #dcc6f7; color: #6c3483; }
+.token-meta    { background: #fff3e0; border-color: #ffd9a0; color: #8a5a00; }
+.token-move    { background: #e6f6fd; border-color: #bce5fb; color: #01608f; }
+.token-end     { background: #fdecea; border-color: #f5c6c0; color: #a93226; }
+
+.token-ellipsis {
+    color: var(--color-blog-meta);
+    font-family: inherit;
+}
+
+/* Next-token completion widget */
+.token-complete {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 2rem auto;
+    padding: 1.5rem 1.25rem;
+    width: fit-content;
+    max-width: 100%;
+    border: 1px solid var(--color-blog-border);
+    border-radius: 14px;
+    background: var(--color-blog-subtle-bg);
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.token-complete-in {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+}
+
+.token-complete-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    color: var(--color-blog-meta);
+}
+
+.token-complete-label {
+    font-family: var(--font-sans, sans-serif);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.token-complete-chevron {
+    font-size: 1.4rem;
+    line-height: 1;
+    color: #16a34a;
+    animation: token-bob 1.6s ease-in-out infinite;
+}
+
+.token-complete-out {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.token-predicted {
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    background: #e7f8ee;
+    border: 1px solid #b6e6c8;
+    color: #15803d;
+    white-space: nowrap;
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.45);
+    animation: token-pulse 2s ease-out infinite;
+}
+
+.token-complete-caption {
+    font-family: var(--font-sans, sans-serif);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-blog-meta);
+}
+
+@keyframes token-bob {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(3px); }
+}
+
+@keyframes token-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.4); }
+    70%  { box-shadow: 0 0 0 8px rgba(22, 163, 74, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .token-complete-chevron,
+    .token-predicted {
+        animation: none;
+    }
+}
+
+/* Token pill used inline within prose (matches .token-strip tokens) */
+.token-inline {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.8rem;
+    padding-top: 0.12rem;
+    padding-bottom: 0.12rem;
+    vertical-align: baseline;
+}
+
+/* Variable-length batching: padding vs packing diagrams */
+.pad-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 1.75rem 0 0.5rem;
+}
+
+.pad-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pad-rowlabel {
+    width: 4rem;
+    flex: none;
+    text-align: right;
+    padding-right: 0.25rem;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--color-blog-meta);
+}
+
+.pad-cell {
+    width: 2rem;
+    height: 2rem;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.pad-move { background: #e6f6fd; border: 1px solid #bce5fb; color: #01608f; }
+.pad-pad {
+    background: var(--color-blog-subtle-bg);
+    border: 1px dashed var(--color-blog-border);
+    color: var(--color-blog-meta);
+}
+
+.packing {
+    margin: 1.75rem 0 0.5rem;
+}
+
+.pack-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.pack-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.pack-tok {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 6px;
+}
+
+.pack-idx {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.7rem;
+    color: var(--color-blog-meta);
+}
+
+.pack-a { background: #e6f6fd; border: 1px solid #bce5fb; }
+.pack-b { background: #f3e8fd; border: 1px solid #dcc6f7; }
+.pack-c { background: #fff3e0; border: 1px solid #ffd9a0; }
+
+.pack-cuseqlens {
+    margin-top: 0.85rem;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.8rem;
+    color: var(--color-blog-text);
+}
+
+/* Spec sheet — label/value configuration card (replaces code blocks) */
+.spec-sheet {
+    background: #fff;
+    border: 1px solid var(--color-blog-border);
+    border-left: 4px solid var(--color-blog-accent);
+    border-radius: 6px;
+    padding: 1.1rem 1.4rem 1.2rem;
+    margin: 1.75rem 0;
+}
+
+.spec-sheet-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-blog-meta);
+    margin-bottom: 0.6rem;
+}
+
+.spec-sheet dl {
+    margin: 0;
+}
+
+.spec-sheet .spec-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid var(--color-blog-border);
+}
+
+.spec-sheet .spec-row:first-child {
+    border-top: none;
+}
+
+.spec-sheet dt {
+    color: var(--color-blog-text);
+    font-size: 0.95rem;
+}
+
+.spec-sheet dd {
+    margin: 0;
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--color-blog-heading);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.spec-sheet dd sup {
+    font-weight: 700;
+}
+
+/* On narrow screens let long config values wrap instead of clipping off the
+   card (the card has no horizontal scroll). Guard a touch above the phone
+   breakpoint so mid-width values (~635px) don't clip either. */
+@media (max-width: 768px) {
+    .spec-sheet dd {
+        white-space: normal;
+    }
+}
+
+/* Stat cards sit on the deep-dive's subtle bg, so give them white to pop */
+.deep-dive .stat-card {
+    background: #fff;
+}
+
+/* ── Eval-suite data section: heatmaps + bar charts ──────────────── */
+
+/* Diverging heatmap (conditioned-Elo × Stockfish score grid) */
+.eval-heatmap {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 3px;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.eval-heatmap th {
+    background: none;
+    border: none;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--color-blog-meta);
+    text-align: center;
+}
+
+.eval-heatmap th.eh-corner {
+    text-align: right;
+    line-height: 1.2;
+}
+
+.eval-heatmap td {
+    padding: 0.6rem 0.4rem;
+    text-align: center;
+    font-family: monospace;
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: #1a1a1a;
+    border-radius: 5px;
+}
+
+.eval-heatmap .eh-rowlabel {
+    background: none;
+    font-family: monospace;
+    font-weight: 700;
+    color: var(--color-blog-heading);
+    text-align: right;
+    padding-right: 0.7rem;
+    white-space: nowrap;
+}
+
+.eval-heatmap tr:hover {
+    background: none;
+}
+
+/* RdYlGn diverging palette, 10-point bands, 50% = even match */
+.hm-0  { background: #b2182b; color: #fff; }
+.hm-10 { background: #d73027; color: #fff; }
+.hm-20 { background: #f46d43; }
+.hm-30 { background: #fdae61; }
+.hm-40 { background: #fee08b; }
+.hm-50 { background: #d9ef8b; }
+.hm-60 { background: #a6d96a; }
+.hm-70 { background: #66bd63; }
+.hm-80 { background: #1a9850; color: #fff; }
+.hm-90 { background: #006837; color: #fff; }
+
+/* Sequential palette (ColorBrewer Blues, colorblind-safe) for the elo x elo
+   heatmaps. Magnitude only — every cell also prints its number, so color is a
+   secondary cue. band index 0..5 is precomputed in blog_heatmap_extract.py. */
+.hm-s0 { background: #eaf3fb; }
+.hm-s1 { background: #c6dbef; }
+.hm-s2 { background: #9ecae1; }
+.hm-s3 { background: #6baed6; }
+.hm-s4 { background: #3182bd; color: #fff; }
+.hm-s5 { background: #08519c; color: #fff; }
+/* absent cell (e.g. cross-skill grid is only a band around the diagonal) */
+.hm-sna { background: var(--color-blog-subtle-bg); }
+
+/* Plain (non-heatmap) cells for the performance-rating grids — no win/lose
+   colour, since a high rating against a strong opponent is expected, not good. */
+.eval-heatmap td.hm-plain {
+    background: var(--color-blog-subtle-bg);
+    color: var(--color-blog-text);
+}
+
+/* Win / draw / loss cells: wins coloured so they stand out (a win against a
+   strong level is the point), losses dimmed. */
+.eval-heatmap td.wdl {
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+.wdl-w { color: var(--color-blog-accent); font-weight: 700; }
+.wdl-l { opacity: 0.5; }
+
+.elo-heatmap th.eh-corner { font-size: 0.68rem; white-space: nowrap; }
+
+/* Local horizontal scroll for any heatmap. The article uses overflow-x: clip,
+   so a grid wider than the content column would be cut off; this wrapper lets
+   it scroll in place instead. Narrow grids (width:100%) just fill and never
+   trigger a scrollbar. */
+.eval-heatmap-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+
+/* Wide grids (the 16x16 rating grids) opt out of width:100% so columns keep a
+   legible minimum width and the wrapper scrolls on narrow screens, rather than
+   squashing 17 columns into the viewport. min-width:100% still fills the
+   content column on desktop. */
+.eval-heatmap--wide {
+    width: max-content;
+    min-width: 100%;
+}
+.eval-heatmap--wide th,
+.eval-heatmap--wide td {
+    min-width: 2.4rem;
+}
+.eval-heatmap--wide .eh-rowlabel,
+.eval-heatmap--wide th.eh-corner {
+    min-width: 3rem;
+}
+
+/* Legend strip for a sequential heatmap: low ── swatches ── high */
+.hm-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: center;
+    margin: 0.6rem 0 0;
+    font-size: 0.78rem;
+    color: var(--color-blog-meta);
+}
+.hm-legend .hm-swatches { display: flex; gap: 2px; }
+.hm-legend .hm-swatches span {
+    width: 1.4rem;
+    height: 0.85rem;
+    border-radius: 2px;
+}
+
+/* Horizontal bar charts for the eval breakdowns */
+.bar-chart {
+    margin: 1.75rem 0;
+}
+
+.bar-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 32%) 1fr auto;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 0.45rem 0;
+}
+
+.bar-label {
+    font-size: 0.9rem;
+    color: var(--color-blog-text);
+    text-align: right;
+}
+
+.bar-track {
+    background: var(--color-blog-subtle-bg);
+    border: 1px solid var(--color-blog-border);
+    border-radius: 4px;
+    overflow: hidden;
+    height: 1.45rem;
+}
+
+.bar-fill {
+    height: 100%;
+    background: var(--color-blog-accent);
+    border-radius: 3px 0 0 3px;
+    min-width: 2px;
+}
+
+.bar-fill.bar-good { background: #1a9850; }
+.bar-fill.bar-warn { background: #d6604d; }
+
+.bar-value {
+    font-family: monospace;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--color-blog-heading);
+    white-space: nowrap;
+}
+
+/* Strength bar charts: dashed even-match (50%) guide + ±1 SE whiskers.
+   The whisker is an I-beam: vertical caps (left/right borders) joined by a
+   horizontal centre line (::after), with a white halo so it reads on both the
+   coloured fill and the empty track it straddles. */
+.strength-chart .bar-track { position: relative; }
+.strength-chart .bar-track::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    border-left: 1px dashed var(--color-blog-border);
+    z-index: 1;
+}
+/* Performance-rating bars: reuse the ±-whisker I-beam, but no even-match guide line */
+.rating-bars .bar-track { position: relative; }
+.bar-err {
+    position: absolute;
+    top: 50%;
+    height: 0.72rem;
+    transform: translateY(-50%);
+    border-left: 2px solid var(--color-blog-heading);
+    border-right: 2px solid var(--color-blog-heading);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+    z-index: 2;
+}
+.bar-err::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    transform: translateY(-50%);
+    background: var(--color-blog-heading);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.bar-pm {
+    font-weight: 400;
+    font-size: 0.8em;
+    opacity: 0.65;
+    margin-left: 0.15rem;
+}
+
+/* Per-cell ± one standard error under each strength-grid score */
+.eval-heatmap .hm-se {
+    display: block;
+    font-size: 0.62em;
+    font-weight: 400;
+    line-height: 1.15;
+    opacity: 0.72;
+    margin-top: 0.08rem;
+}
+
+@media (max-width: 600px) {
+    .eval-heatmap {
+        font-size: 0.72rem;
+        border-spacing: 2px;
+    }
+
+    .eval-heatmap th {
+        font-size: 0.62rem;
+    }
+
+    .eval-heatmap td {
+        padding: 0.4rem 0.2rem;
+        font-size: 0.72rem;
+    }
+
+    .bar-row {
+        grid-template-columns: minmax(80px, 38%) 1fr auto;
+        gap: 0.5rem;
+    }
+
+    .bar-label {
+        font-size: 0.78rem;
+    }
+
+    /* Short, uniform "SF NNNN" labels: shrink the label column to its content
+       so the bars fill the gutter instead of hugging the right half. */
+    .strength-chart .bar-row,
+    .rating-bars .bar-row {
+        grid-template-columns: auto 1fr auto;
+    }
+}
+
+@media (max-width: 600px) {
+    .san-table th,
+    .san-table td {
+        padding: 0.55rem 0.6rem;
+    }
+
+    .san-table .san-gloss {
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+
+    .san-ambiguity {
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 1.25rem 1.25rem;
+    }
+
+    .san-ambiguity-arrow {
+        transform: rotate(90deg);
+    }
+
+    .bitfield {
+        gap: 3px;
+    }
+
+    .bitfield .bits {
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+    }
+
+    .bitfield .seg-label {
+        font-size: 0.58rem;
+    }
+
+    .token-strip {
+        font-size: 0.75rem;
+    }
+
+    .token-complete {
+        font-size: 0.75rem;
+        padding: 1.25rem 0.85rem;
+    }
+
+    .pad-grid,
+    .pack-row {
+        gap: 3px;
+    }
+
+    .pad-rowlabel {
+        width: 3rem;
+        font-size: 0.65rem;
+    }
+
+    .pad-cell,
+    .pack-tok {
+        width: 1.5rem;
+        height: 1.5rem;
+        font-size: 0.72rem;
+    }
+
+    .pack-idx {
+        font-size: 0.62rem;
+    }
+
+    .spec-sheet {
+        padding: 0.9rem 1.1rem 1rem;
+    }
+
+    .spec-sheet dt,
+    .spec-sheet dd {
+        font-size: 0.85rem;
+    }
+}
+
+/* Print: expand all deep-dives so a print-to-PDF isn't missing the full
+   results that live behind <details>. */
+@media print {
+    details.deep-dive { display: block; }
+    details.deep-dive > summary { display: none; }
+    details.deep-dive .deep-dive-body { display: block; }
+}
+
+/* Interactive performance-rating-vs-opponent chart (strength-chart.js) */
+.sc-wrap { margin: 1.5rem 0 0.5rem; }
+
+.sc-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+    min-height: 1.6rem;
+}
+.sc-seg {
+    display: inline-flex;
+    border: 1px solid var(--color-blog-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.sc-seg button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--color-blog-meta);
+    font: 600 0.8rem/1 var(--font-sans, sans-serif);
+    padding: 0.34rem 0.85rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.sc-seg button + button { border-left: 1px solid var(--color-blog-border); }
+.sc-seg button.is-on { background: var(--color-blog-accent); color: #fff; }
+.sc-readout {
+    font: 0.8rem/1.3 var(--font-sans, sans-serif);
+    color: var(--color-blog-meta);
+}
+
+.sc-svg { display: block; width: 100%; height: auto; font-family: var(--font-sans, sans-serif); }
+.sc-gridline { stroke: var(--color-blog-border); stroke-width: 1; opacity: 0.55; }
+.sc-axis { stroke: var(--color-blog-meta); stroke-width: 1.2; }
+.sc-ylab { font-size: 12px; fill: var(--color-blog-meta); }
+.sc-xlab { font-size: 13px; fill: var(--color-blog-text); font-weight: 600; }
+.sc-axistitle { font-size: 13px; fill: var(--color-blog-meta); }
+.sc-legtitle { font-size: 11.5px; fill: var(--color-blog-meta); }
+.sc-line { transition: opacity 0.12s ease, stroke-width 0.12s ease; }
+.sc-marker { stroke: #fff; stroke-width: 1.5; }
+.sc-guideline { stroke: var(--color-blog-meta); stroke-width: 1.2; stroke-dasharray: 5 4; opacity: 0.7; }
+.sc-guidelab { font-size: 11.5px; fill: var(--color-blog-meta); font-style: italic; }
+.sc-tiprect { fill: var(--color-blog-heading); opacity: 0.95; }
+.sc-tiptext { font-size: 12px; fill: #fff; font-weight: 600; }

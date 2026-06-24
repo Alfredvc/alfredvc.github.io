@@ -102,7 +102,7 @@
   min-width: 180px;
   max-width: 260px;
   border: 1px solid #ececec;
-  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: 'Helvetica Neue', system-ui, sans-serif;
 }
 
 .graph-controls-floating .graph-search-input,
@@ -219,7 +219,7 @@
   box-shadow: 0 2px 8px rgba(0,0,0,0.10);
   padding: 12px 14px;
   border: 1px solid #ececec;
-  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: 'Helvetica Neue', system-ui, sans-serif;
   min-width: 140px;
 }
 
